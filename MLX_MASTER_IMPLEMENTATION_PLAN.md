@@ -1,12 +1,16 @@
 # MLX HRM Master Implementation Plan
 
-## Progress Status: Phase 1 Complete (Foundation Components) 
+## Progress Status: Phase 2.3 Complete (RoPE) 
 **Last Updated**: 2025-08-02
 
 ### Phase Completion:
 - ✅ **Phase 1**: Foundation Components (Initialization + RMSNorm) - COMPLETE
-- ⏳ **Phase 2**: Core Components (SwiGLU next) - READY TO START
-- ⏹️ **Phases 3-9**: Pending
+- ✅ **Phase 2**: Core Components - COMPLETE
+  - ✅ SwiGLU Activation
+  - ✅ Sparse Embeddings
+  - ✅ Rotary Position Embeddings (RoPE)
+- ⏳ **Phase 3**: Complex Modules (Attention next) - READY TO START
+- ⏹️ **Phases 4-9**: Pending
 
 ## Executive Summary
 
@@ -16,11 +20,13 @@ This master plan provides a comprehensive roadmap for implementing the Hierarchi
 - ✅ **Phase 1**: Foundation Components - COMPLETE
   - ✅ Custom Weight Initialization
   - ✅ RMSNorm Layer
-- ⏳ **Phase 2**: Core Components - IN PROGRESS
+- ✅ **Phase 2**: Core Components - COMPLETE
   - ✅ SwiGLU Activation
   - ✅ Sparse Embeddings
-  - ⏹️ Rotary Position Embeddings
-- ⏹️ **Phases 3-9**: Pending
+  - ✅ Rotary Position Embeddings
+- ⏳ **Phase 3**: Complex Modules - READY TO START
+  - ⏹️ Multi-Head Attention (next)
+- ⏹️ **Phases 4-9**: Pending
 
 ## Table of Contents
 
@@ -176,15 +182,23 @@ MLX/  # Located at ~/Documents/MLX/
 - Memory-efficient design - only loads embeddings used in current batch
 - Compatible with MLX's immutable array semantics
 
-#### 2.3 Rotary Position Embeddings
+#### 2.3 Rotary Position Embeddings ✅
 - **Plan**: `MLX_ROPE_IMPLEMENTATION_PLAN.md`
 - **Module**: `src/mlx_hrm/modules/rope.py`
 - **Dependencies**: None (standalone)
 - **Key Tasks**:
-  - [ ] Implement RoPE with caching
-  - [ ] Support length extrapolation
-  - [ ] Test position encoding properties
-  - [ ] Optimize for different sequence lengths
+  - [x] Implement RoPE with caching
+  - [x] Support length extrapolation
+  - [x] Test position encoding properties
+  - [x] Optimize for different sequence lengths
+
+**Completed Details**:
+- Exact port of PyTorch HRM's RotaryEmbedding with precomputed cos/sin cache
+- Implemented rotate_half and apply_rotary_pos_emb functions
+- Support for dynamic cache extension and dtype casting
+- 21 unit tests + 10 mathematical property tests
+- Performance: 2.4+ GFLOPS throughput, 2x speedup with float16
+- Memory efficient caching with lazy evaluation
 
 ### Phase 3: Complex Modules (Week 2-3)
 

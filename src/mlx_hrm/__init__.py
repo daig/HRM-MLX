@@ -9,8 +9,10 @@ __version__ = "0.1.0"
 
 # Import key components
 from . import layers
+from . import modules
 
 __all__ = [
     "layers",
+    "modules",
     "__version__",
 ]
