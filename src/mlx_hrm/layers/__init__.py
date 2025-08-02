@@ -16,6 +16,11 @@ from .normalization import (
     RMSNormCompatible,
     create_rms_norm,
 )
+from .activations import (
+    SwiGLU,
+    silu,
+    SwiGLUFactory,
+)
 
 __all__ = [
     # Initialization
@@ -28,4 +33,8 @@ __all__ = [
     "RMSNorm",
     "RMSNormCompatible",
     "create_rms_norm",
+    # Activations
+    "SwiGLU",
+    "silu",
+    "SwiGLUFactory",
 ]

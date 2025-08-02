@@ -140,15 +140,23 @@ MLX/  # Located at ~/Documents/MLX/
 
 **Goal**: Build essential layers that depend only on Phase 1
 
-#### 2.1 SwiGLU Activation
+#### 2.1 SwiGLU Activation ✅
 - **Plan**: `MLX_SWIGLU_IMPLEMENTATION_PLAN.md`
 - **Module**: `src/mlx_hrm/layers/activations.py`
 - **Dependencies**: Custom initialization
 - **Key Tasks**:
-  - [ ] Implement SwiGLU with fused projections
-  - [ ] Optimize intermediate dimension calculation
-  - [ ] Test activation behavior and gradients
-  - [ ] Benchmark memory usage and speed
+  - [x] Implement SwiGLU with fused projections
+  - [x] Optimize intermediate dimension calculation
+  - [x] Test activation behavior and gradients
+  - [x] Benchmark memory usage and speed
+
+**Completed Details**:
+- Exact port of PyTorch HRM's SwiGLU with fused gate/up projection
+- Proper intermediate dimension calculation with 2/3 factor and rounding
+- Uses custom LinearTruncNormal for exact initialization match
+- 22 comprehensive unit tests covering all functionality
+- Verified parameter efficiency (~10-15% overhead vs standard FFN)
+- Stable gradient flow across different input scales
 
 #### 2.2 Sparse Embeddings
 - **Plan**: `MLX_SPARSE_EMBEDDINGS_IMPLEMENTATION_PLAN.md`
