@@ -21,6 +21,12 @@ from .activations import (
     silu,
     SwiGLUFactory,
 )
+from .embeddings import (
+    CastedSparseEmbedding,
+    SignSGD,
+    SignSGDState,
+    create_sparse_embedding_optimizer,
+)
 
 __all__ = [
     # Initialization
@@ -37,4 +43,9 @@ __all__ = [
     "SwiGLU",
     "silu",
     "SwiGLUFactory",
+    # Embeddings
+    "CastedSparseEmbedding",
+    "SignSGD",
+    "SignSGDState",
+    "create_sparse_embedding_optimizer",
 ]

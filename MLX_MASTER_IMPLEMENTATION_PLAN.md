@@ -16,9 +16,9 @@ This master plan provides a comprehensive roadmap for implementing the Hierarchi
 - ✅ **Phase 1**: Foundation Components - COMPLETE
   - ✅ Custom Weight Initialization
   - ✅ RMSNorm Layer
-- ⏳ **Phase 2**: Core Components - NEXT
-  - ⏹️ SwiGLU Activation
-  - ⏹️ Sparse Embeddings
+- ⏳ **Phase 2**: Core Components - IN PROGRESS
+  - ✅ SwiGLU Activation
+  - ✅ Sparse Embeddings
   - ⏹️ Rotary Position Embeddings
 - ⏹️ **Phases 3-9**: Pending
 
@@ -158,15 +158,23 @@ MLX/  # Located at ~/Documents/MLX/
 - Verified parameter efficiency (~10-15% overhead vs standard FFN)
 - Stable gradient flow across different input scales
 
-#### 2.2 Sparse Embeddings
+#### 2.2 Sparse Embeddings ✅
 - **Plan**: `MLX_SPARSE_EMBEDDINGS_IMPLEMENTATION_PLAN.md`
 - **Module**: `src/mlx_hrm/layers/embeddings.py`
 - **Dependencies**: Custom initialization
 - **Key Tasks**:
-  - [ ] Implement sparse embedding layer
-  - [ ] Port SignSGD optimizer
-  - [ ] Test vocabulary scaling
-  - [ ] Memory optimization for large vocabularies
+  - [x] Implement sparse embedding layer
+  - [x] Port SignSGD optimizer
+  - [x] Test vocabulary scaling
+  - [x] Memory optimization for large vocabularies
+
+**Completed Details**:
+- Exact port of PyTorch HRM's CastedSparseEmbedding with local workspace
+- SignSGD optimizer with proper sign-based updates and weight decay
+- Support for mixed precision training (cast_to parameter)
+- 15 comprehensive unit tests covering all functionality
+- Memory-efficient design - only loads embeddings used in current batch
+- Compatible with MLX's immutable array semantics
 
 #### 2.3 Rotary Position Embeddings
 - **Plan**: `MLX_ROPE_IMPLEMENTATION_PLAN.md`
