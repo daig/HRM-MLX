@@ -1,43 +1,93 @@
 Metadata-Version: 2.4
 Name: mlx-hrm
 Version: 0.1.0
-Summary: Hierarchical Reasoning Model implementation in MLX
-Author: MLX HRM Contributors
+Summary: Hierarchical Reasoning Model (HRM) implementation in MLX
+Author-email: HRM MLX Team <hrm-mlx@example.com>
 License: MIT
-Project-URL: Homepage, https://github.com/mlx-hrm/mlx-hrm
-Project-URL: Bug Reports, https://github.com/mlx-hrm/mlx-hrm/issues
-Project-URL: Source, https://github.com/mlx-hrm/mlx-hrm
-Keywords: mlx,machine learning,neural networks,reasoning,apple silicon
+Project-URL: Homepage, https://github.com/hrm-org/mlx-hrm
+Project-URL: Bug Tracker, https://github.com/hrm-org/mlx-hrm/issues
+Project-URL: Documentation, https://mlx-hrm.readthedocs.io
+Keywords: machine learning,neural networks,reasoning,mlx,apple silicon
 Classifier: Development Status :: 3 - Alpha
-Classifier: Intended Audience :: Developers
 Classifier: Intended Audience :: Science/Research
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Programming Language :: Python :: 3
 Classifier: Programming Language :: Python :: 3.9
 Classifier: Programming Language :: Python :: 3.10
 Classifier: Programming Language :: Python :: 3.11
-Classifier: Programming Language :: Python :: 3.12
 Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
-Requires-Dist: mlx>=0.22.0
-Requires-Dist: numpy>=1.24.0
-Requires-Dist: tqdm>=4.65.0
-Requires-Dist: pyyaml>=6.0
-Requires-Dist: click>=8.1.0
-Requires-Dist: rich>=13.0.0
+Requires-Dist: mlx>=0.5.0
+Requires-Dist: numpy>=1.21.0
+Requires-Dist: tqdm>=4.62.0
 Provides-Extra: dev
-Requires-Dist: pytest>=7.3.0; extra == "dev"
+Requires-Dist: pytest>=7.0.0; extra == "dev"
 Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
-Requires-Dist: pytest-benchmark>=4.0.0; extra == "dev"
-Requires-Dist: black>=23.0.0; extra == "dev"
-Requires-Dist: isort>=5.12.0; extra == "dev"
-Requires-Dist: flake8>=6.0.0; extra == "dev"
-Requires-Dist: mypy>=1.0.0; extra == "dev"
-Requires-Dist: pre-commit>=3.0.0; extra == "dev"
-Provides-Extra: torch
-Requires-Dist: torch>=2.0.0; extra == "torch"
-Provides-Extra: wandb
-Requires-Dist: wandb>=0.16.0; extra == "wandb"
-Provides-Extra: all
-Requires-Dist: mlx-hrm[dev,torch,wandb]; extra == "all"
+Requires-Dist: black>=22.0.0; extra == "dev"
+Requires-Dist: isort>=5.10.0; extra == "dev"
+Requires-Dist: flake8>=4.0.0; extra == "dev"
+Requires-Dist: mypy>=0.950; extra == "dev"
+Provides-Extra: test
+Requires-Dist: pytest>=7.0.0; extra == "test"
+Requires-Dist: pytest-cov>=4.0.0; extra == "test"
+
+# MLX HRM Implementation
+
+Hierarchical Reasoning Model (HRM) implementation in MLX for Apple Silicon.
+
+## Installation
+
+```bash
+pip install -e .
+```
+
+## Development
+
+Install development dependencies:
+```bash
+pip install -e ".[dev]"
+```
+
+## Testing
+
+Run tests:
+```bash
+pytest tests/
+```
+
+## Current Implementation Status
+
+### Phase 1: Foundation Components ✅
+- [x] Custom Weight Initialization (truncated normal with variance correction)
+- [x] Linear layer with truncated normal initialization
+- [x] Embedding layer with truncated normal initialization
+- [x] Comprehensive unit tests
+- [x] Project setup (pyproject.toml, requirements.txt)
+
+### Next Steps
+- [ ] RMSNorm Layer
+- [ ] SwiGLU Activation
+- [ ] Sparse Embeddings
+- [ ] Rotary Position Embeddings (RoPE)
+- [ ] Multi-Head Attention
+- [ ] Adaptive Computation Time (ACT)
+- [ ] Complete HRM Model
+
+## Usage Example
+
+```python
+import mlx.core as mx
+from mlx_hrm.layers import truncated_normal, LinearTruncNormal, EmbeddingTruncNormal
+
+# Basic truncated normal initialization
+weights = truncated_normal((256, 128), std=0.02)
+
+# Custom layers with truncated normal init
+linear = LinearTruncNormal(784, 256, std=0.02)
+embedding = EmbeddingTruncNormal(10000, 512)
+
+# Forward pass
+x = mx.random.normal((32, 784))
+y = linear(x)
+```

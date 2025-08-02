@@ -1,8 +1,16 @@
 # MLX HRM Master Implementation Plan
 
+## Progress Status: Phase 1 Complete (1/9 phases) 
+**Last Updated**: 2025-08-02
+
 ## Executive Summary
 
 This master plan provides a comprehensive roadmap for implementing the Hierarchical Reasoning Model (HRM) in MLX from scratch. It follows a bottom-up approach, starting with foundational components and building up to the complete model. Each phase references specific implementation plans and ensures proper testing and validation at every step.
+
+### Current Status
+- ✅ **Phase 1**: Custom Weight Initialization - COMPLETE
+- ⏳ **Phase 2**: RMSNorm (next up)
+- ⏹️ **Phases 3-9**: Pending
 
 ## Table of Contents
 
@@ -81,18 +89,25 @@ MLX/  # Located at ~/Documents/MLX/
 
 ## Implementation Phases
 
-### Phase 1: Foundation Components (Week 1)
+### Phase 1: Foundation Components (Week 1) ✅ COMPLETED
 
 **Goal**: Implement basic building blocks with no dependencies
 
-#### 1.1 Custom Weight Initialization
+#### 1.1 Custom Weight Initialization ✅
 - **Plan**: `MLX_CUSTOM_INITIALIZATION_IMPLEMENTATION_PLAN.md`
 - **Module**: `src/mlx_hrm/layers/initialization.py`
 - **Key Tasks**:
-  - [ ] Implement truncated normal initialization
-  - [ ] Match JAX/PyTorch initialization behavior
-  - [ ] Create comprehensive unit tests
-  - [ ] Benchmark against PyTorch reference
+  - [x] Implement truncated normal initialization
+  - [x] Match JAX/PyTorch initialization behavior
+  - [x] Create comprehensive unit tests
+  - [x] Benchmark against PyTorch reference
+
+**Completed Details**:
+- Exact port of PyTorch HRM's truncated normal with variance correction
+- Implemented `LinearTruncNormal` and `EmbeddingTruncNormal` layers
+- 21 comprehensive unit tests covering all edge cases
+- Documented PyTorch's std inflation quirk (29% for default bounds)
+- Verified exact behavioral match including clipping at `bounds * comp_std`
 
 #### 1.2 RMSNorm Layer
 - **Plan**: `MLX_RMSNORM_IMPLEMENTATION_PLAN.md`
@@ -269,8 +284,8 @@ def convert_pytorch_to_mlx(pytorch_path, mlx_path):
 ## Project Timeline
 
 ### Week 1: Foundation
-- Days 1-2: Setup and initialization module
-- Days 3-4: RMSNorm implementation
+- Days 1-2: Setup and initialization module ✅ COMPLETE
+- Days 3-4: RMSNorm implementation ⏳ NEXT
 - Day 5: Testing and benchmarking
 
 ### Week 2: Core Components
@@ -325,7 +340,7 @@ Each phase builds on the previous ones, creating a solid foundation for the comp
 ## Quick Reference
 
 ### Implementation Order
-1. **Initialization** → 2. **RMSNorm** → 3. **SwiGLU** → 4. **Sparse Embeddings** → 5. **RoPE** → 6. **Attention** → 7. **ACT** → 8. **HRM Model** → 9. **Training**
+1. **Initialization** ✅ → 2. **RMSNorm** ⏳ → 3. **SwiGLU** → 4. **Sparse Embeddings** → 5. **RoPE** → 6. **Attention** → 7. **ACT** → 8. **HRM Model** → 9. **Training**
 
 ### Key Dependencies
 - Attention needs: RoPE, RMSNorm

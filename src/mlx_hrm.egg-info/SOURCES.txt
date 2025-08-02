@@ -1,9 +1,15 @@
+README.md
 pyproject.toml
+setup.py
 src/mlx_hrm/__init__.py
 src/mlx_hrm.egg-info/PKG-INFO
 src/mlx_hrm.egg-info/SOURCES.txt
 src/mlx_hrm.egg-info/dependency_links.txt
-src/mlx_hrm.egg-info/entry_points.txt
 src/mlx_hrm.egg-info/requires.txt
 src/mlx_hrm.egg-info/top_level.txt
+src/mlx_hrm/configs/__init__.py
 src/mlx_hrm/layers/__init__.py
+src/mlx_hrm/layers/initialization.py
+src/mlx_hrm/models/__init__.py
+src/mlx_hrm/modules/__init__.py
+src/mlx_hrm/training/__init__.py

@@ -1,2 +1,0 @@
-[console_scripts]
-mlx-hrm = mlx_hrm.cli:main
