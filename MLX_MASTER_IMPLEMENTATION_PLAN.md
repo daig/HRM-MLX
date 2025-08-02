@@ -1,15 +1,25 @@
 # MLX HRM Master Implementation Plan
 
-## Progress Status: Phase 1 Complete (1/9 phases) 
+## Progress Status: Phase 1 Complete (Foundation Components) 
 **Last Updated**: 2025-08-02
+
+### Phase Completion:
+- ✅ **Phase 1**: Foundation Components (Initialization + RMSNorm) - COMPLETE
+- ⏳ **Phase 2**: Core Components (SwiGLU next) - READY TO START
+- ⏹️ **Phases 3-9**: Pending
 
 ## Executive Summary
 
 This master plan provides a comprehensive roadmap for implementing the Hierarchical Reasoning Model (HRM) in MLX from scratch. It follows a bottom-up approach, starting with foundational components and building up to the complete model. Each phase references specific implementation plans and ensures proper testing and validation at every step.
 
 ### Current Status
-- ✅ **Phase 1**: Custom Weight Initialization - COMPLETE
-- ⏳ **Phase 2**: RMSNorm (next up)
+- ✅ **Phase 1**: Foundation Components - COMPLETE
+  - ✅ Custom Weight Initialization
+  - ✅ RMSNorm Layer
+- ⏳ **Phase 2**: Core Components - NEXT
+  - ⏹️ SwiGLU Activation
+  - ⏹️ Sparse Embeddings
+  - ⏹️ Rotary Position Embeddings
 - ⏹️ **Phases 3-9**: Pending
 
 ## Table of Contents
@@ -109,14 +119,22 @@ MLX/  # Located at ~/Documents/MLX/
 - Documented PyTorch's std inflation quirk (29% for default bounds)
 - Verified exact behavioral match including clipping at `bounds * comp_std`
 
-#### 1.2 RMSNorm Layer
+#### 1.2 RMSNorm Layer ✅
 - **Plan**: `MLX_RMSNORM_IMPLEMENTATION_PLAN.md`
 - **Module**: `src/mlx_hrm/layers/normalization.py`
 - **Key Tasks**:
-  - [ ] Implement RMSNorm with MLX backend
-  - [ ] Ensure numerical stability in mixed precision
-  - [ ] Test shape preservation and gradient flow
-  - [ ] Performance benchmarking
+  - [x] Implement RMSNorm with MLX backend
+  - [x] Ensure numerical stability in mixed precision
+  - [x] Test shape preservation and gradient flow
+  - [x] Performance benchmarking
+
+**Completed Details**:
+- Implemented both functional and module-based RMSNorm variants
+- Functional version exactly matches PyTorch HRM behavior (no learnable params)
+- Module version supports both with/without learnable scale parameters
+- 22 comprehensive unit tests including edge cases and gradient flow
+- Benchmarked performance: MLX built-in is ~2x faster than functional
+- Mixed precision support with internal float32 computation for stability
 
 ### Phase 2: Core Components (Week 1-2)
 
@@ -283,10 +301,10 @@ def convert_pytorch_to_mlx(pytorch_path, mlx_path):
 
 ## Project Timeline
 
-### Week 1: Foundation
+### Week 1: Foundation ✅ COMPLETE
 - Days 1-2: Setup and initialization module ✅ COMPLETE
-- Days 3-4: RMSNorm implementation ⏳ NEXT
-- Day 5: Testing and benchmarking
+- Days 3-4: RMSNorm implementation ✅ COMPLETE
+- Day 5: Testing and benchmarking ✅ COMPLETE
 
 ### Week 2: Core Components
 - Days 1-2: SwiGLU activation

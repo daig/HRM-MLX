@@ -10,10 +10,22 @@ from .initialization import (
     LinearTruncNormal,
     EmbeddingTruncNormal,
 )
+from .normalization import (
+    rms_norm,
+    RMSNorm,
+    RMSNormCompatible,
+    create_rms_norm,
+)
 
 __all__ = [
+    # Initialization
     "truncated_normal",
     "init_truncated_normal",
     "LinearTruncNormal",
     "EmbeddingTruncNormal",
+    # Normalization
+    "rms_norm",
+    "RMSNorm",
+    "RMSNormCompatible",
+    "create_rms_norm",
 ]
