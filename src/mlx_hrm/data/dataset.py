@@ -250,10 +250,13 @@ class EnhancedPuzzleDataset:
         self.metadata = self._load_metadata()
         self.examples = self._load_data()
         
+        # Convert to MLX arrays for efficient processing
+        self._convert_to_mlx_arrays()
+        
         # Initialize smart batching structures
         self._init_smart_batching()
         
-        print(f"Loaded {len(self.examples)} examples from {self.data_path}")
+        print(f"Loaded {self.num_examples} examples from {self.data_path}")
         print(f"Smart batching: {len(self.puzzle_indices)-1} puzzles, {len(self.group_indices)-1} groups")
     
     def _init_smart_batching(self):
@@ -261,8 +264,8 @@ class EnhancedPuzzleDataset:
         # Create puzzle indices (start index of each puzzle's examples)
         puzzle_to_examples = {}
         
-        for i, example in enumerate(self.examples):
-            puzzle_id = example.get('puzzle_id', 0)
+        for i in range(self.num_examples):
+            puzzle_id = int(self.puzzle_ids[i].item())
             if puzzle_id not in puzzle_to_examples:
                 puzzle_to_examples[puzzle_id] = []
             puzzle_to_examples[puzzle_id].append(i)
@@ -316,6 +319,48 @@ class EnhancedPuzzleDataset:
             current_index += len(groups[group_type])
             group_indices.append(current_index)
         return mx.array(group_indices)
+    
+    def _convert_to_mlx_arrays(self):
+        """Convert loaded examples to efficient MLX array format."""
+        if not self.examples:
+            self.num_examples = 0
+            return
+        
+        # Pre-allocate arrays for better efficiency
+        self.num_examples = len(self.examples)
+        max_len = self.max_seq_len
+        
+        # Extract data into separate arrays
+        input_ids_list = []
+        labels_list = []
+        puzzle_ids_list = []
+        
+        for example in self.examples:
+            # Pad sequences to max length
+            input_ids = self._pad_sequence(example['input_ids'], max_len)
+            labels = self._pad_sequence(example['labels'], max_len, IGNORE_LABEL_ID)
+            
+            input_ids_list.append(input_ids)
+            labels_list.append(labels)
+            puzzle_ids_list.append(example.get('puzzle_id', 0))
+        
+        # Convert to MLX arrays
+        self.input_ids = mx.array(input_ids_list)
+        self.labels = mx.array(labels_list)
+        self.puzzle_ids = mx.array(puzzle_ids_list)
+        
+        # Clear the original examples list to save memory
+        self.examples = None
+    
+    def _extract_puzzle_id(self, task_id: str) -> int:
+        """Extract puzzle ID from task name."""
+        if task_id.startswith('task_'):
+            try:
+                return int(task_id.split('_')[1])
+            except (IndexError, ValueError):
+                pass
+        # Fallback to hash for non-standard task names
+        return hash(task_id) % 1000
     
     def _load_metadata(self) -> Optional[PuzzleDatasetMetadata]:
         """Load dataset metadata from JSON file."""
@@ -420,7 +465,7 @@ class EnhancedPuzzleDataset:
                                 examples.append({
                                     'input_ids': combined[:-1],  # Input without last token
                                     'labels': combined[1:],      # Output shifted by 1
-                                    'puzzle_id': hash(task_id) % 1000
+                                    'puzzle_id': self._extract_puzzle_id(task_id)
                                 })
             except Exception as e:
                 print(f"Failed to load {json_file}: {e}")
@@ -551,20 +596,14 @@ class EnhancedPuzzleDataset:
     
     def __len__(self) -> int:
         """Get dataset size."""
-        return len(self.examples)
+        return self.num_examples
     
     def __getitem__(self, idx: int) -> Dict[str, mx.array]:
         """Get a single example."""
-        example = self.examples[idx]
-        
-        # Pad sequences to max length
-        input_ids = self._pad_sequence(example['input_ids'], self.max_seq_len)
-        labels = self._pad_sequence(example['labels'], self.max_seq_len, IGNORE_LABEL_ID)
-        
         return {
-            'input_ids': mx.array(input_ids),
-            'labels': mx.array(labels),
-            'puzzle_id': mx.array(example.get('puzzle_id', 0))
+            'input_ids': self.input_ids[idx],
+            'labels': self.labels[idx],
+            'puzzle_id': self.puzzle_ids[idx]
         }
     
     def create_smart_dataloader(self, batch_size: int, epochs_per_iter: int = 1) -> 'SmartDataLoader':
@@ -669,24 +708,12 @@ class SmartDataLoader:
             
             example_indices, puzzle_ids = batch_result
             
-            # Collect batch data
-            batch_data = {
-                'input_ids': [],
-                'labels': [],
-                'puzzle_id': []
+            # Use MLX array indexing for efficiency
+            batch = {
+                'input_ids': self.dataset.input_ids[example_indices],
+                'labels': self.dataset.labels[example_indices],
+                'puzzle_id': self.dataset.puzzle_ids[example_indices]
             }
-            
-            for idx in example_indices:
-                example = self.dataset[idx]
-                for key in batch_data:
-                    if key in example:
-                        batch_data[key].append(example[key])
-            
-            # Stack into batch tensors
-            batch = {}
-            for key, values in batch_data.items():
-                if values:
-                    batch[key] = mx.stack(values)
             
             yield batch
     
@@ -694,26 +721,15 @@ class SmartDataLoader:
         """Test iteration: sequential, deterministic."""
         # Process examples sequentially
         for i in range(0, len(self.dataset), self.batch_size):
-            batch_indices = list(range(i, min(i + self.batch_size, len(self.dataset))))
+            end_idx = min(i + self.batch_size, len(self.dataset))
+            batch_indices = mx.array(list(range(i, end_idx)))
             
-            # Collect batch data
-            batch_data = {
-                'input_ids': [],
-                'labels': [],
-                'puzzle_id': []
+            # Use MLX array indexing for efficiency
+            batch = {
+                'input_ids': self.dataset.input_ids[batch_indices],
+                'labels': self.dataset.labels[batch_indices],
+                'puzzle_id': self.dataset.puzzle_ids[batch_indices]
             }
-            
-            for idx in batch_indices:
-                example = self.dataset[idx]
-                for key in batch_data:
-                    if key in example:
-                        batch_data[key].append(example[key])
-            
-            # Stack into batch tensors
-            batch = {}
-            for key, values in batch_data.items():
-                if values:
-                    batch[key] = mx.stack(values)
             
             yield batch
     
@@ -895,7 +911,7 @@ class PuzzleDataset:
                                 examples.append({
                                     'input_ids': combined[:-1],  # Input without last token
                                     'labels': combined[1:],      # Output shifted by 1
-                                    'puzzle_id': hash(task_id) % 1000
+                                    'puzzle_id': self._extract_puzzle_id(task_id)
                                 })
             except Exception as e:
                 print(f"Failed to load {json_file}: {e}")
