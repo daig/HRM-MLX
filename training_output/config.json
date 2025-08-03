@@ -1,0 +1,27 @@
+{
+  "model_preset": "tiny",
+  "batch_size": 8,
+  "gradient_accumulation_steps": 4,
+  "learning_rate": 0.0001,
+  "weight_decay": 0.1,
+  "max_training_steps": 1000,
+  "warmup_steps": 100,
+  "eval_every_n_steps": 100,
+  "checkpoint_every_n_steps": 200,
+  "log_every_n_steps": 10,
+  "use_mixed_precision": true,
+  "mixed_precision_dtype": "float16",
+  "mixed_precision_components": [
+    "attention",
+    "feedforward"
+  ],
+  "early_stopping_patience": 5,
+  "max_grad_norm": 1.0,
+  "loss_type": "stablemax",
+  "num_samples": 1000,
+  "vocab_size": 1000,
+  "seq_len": 32,
+  "num_puzzle_types": 3,
+  "val_split": 0.2,
+  "output_dir": "./training_output"
+}
