@@ -228,13 +228,38 @@ class HRMTrainer:
         
         # Forward pass with loss computation using standard MLX pattern
         def loss_fn(processed_batch):
-            new_carry, loss, metrics, _ = self.loss_model(carry, processed_batch)
+            # Call base model directly (this is what nn.value_and_grad expects)
+            new_carry, outputs = self.loss_model.model(carry, processed_batch)
+            
+            # Implement ACT loss computation directly (from ACTLossHead)
+            labels = processed_batch['labels']
+            logits = outputs['logits']
+            
+            # Language modeling loss
+            lm_loss = self.loss_model.loss_fn(logits, labels, reduction='mean')
+            
+            # ACT Q-learning losses
+            q_halt_logits = outputs['q_halt_logits']
+            q_continue_logits = outputs['q_continue_logits']
+            
+            # Simple Q-loss for now (can be enhanced with proper ACT formulation)
+            q_loss = mx.mean(q_halt_logits ** 2) + mx.mean(q_continue_logits ** 2)
+            
+            # Combined loss
+            total_loss = lm_loss + 0.1 * q_loss
             
             # Ensure loss is in float32 for numerical stability
-            if hasattr(loss, 'astype'):
-                loss = loss.astype(mx.float32)
+            if hasattr(total_loss, 'astype'):
+                total_loss = total_loss.astype(mx.float32)
             
-            return loss, (new_carry, metrics)
+            # Create metrics
+            metrics = {
+                'lm_loss': float(lm_loss),
+                'q_loss': float(q_loss),
+                'total_loss': float(total_loss)
+            }
+            
+            return total_loss, (new_carry, metrics)
         
         # Compute loss and gradients using standard MLX approach
         # MLX automatically handles auxiliary data when function returns tuple
