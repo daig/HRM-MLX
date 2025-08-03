@@ -8,10 +8,12 @@ from .rope import (
     apply_rotary_pos_emb,
     CosSin
 )
+from .attention import Attention
 
 __all__ = [
     "RotaryEmbedding",
     "rotate_half", 
     "apply_rotary_pos_emb",
-    "CosSin"
+    "CosSin",
+    "Attention"
 ]
