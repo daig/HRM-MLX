@@ -265,14 +265,15 @@ class TestEndToEndForwardPass:
         model = create_hrm(self.config)
         batch = create_deterministic_test_batch(batch_size=2, seq_len=8, vocab_size=self.config['vocab_size'])
         
-        def loss_fn(model, batch):
+        def loss_fn(batch):
             carry = model.initial_carry(batch_size=batch['input_ids'].shape[0])
             carry_out, outputs = model(carry, batch)
             # Simple loss for testing gradient flow
             return mx.sum(outputs['logits'] ** 2) + mx.sum(outputs['q_halt_logits'] ** 2)
         
-        # Compute gradients
-        loss, gradients = mx.value_and_grad(loss_fn)(model, batch)
+        # Compute gradients using standard MLX pattern
+        loss_and_grad_fn = nn.value_and_grad(model, loss_fn)
+        loss, gradients = loss_and_grad_fn(batch)
         
         # Check that loss is finite
         assert mx.isfinite(loss), f"Loss is not finite: {loss}"
@@ -280,11 +281,18 @@ class TestEndToEndForwardPass:
         # Check that gradients exist and are reasonable
         assert isinstance(gradients, dict), f"Gradients should be dict, got {type(gradients)}"
         
-        # Count parameters in gradients 
-        grad_params = get_model_parameters({'gradients': gradients})
-        model_params = get_model_parameters(model)
+        # Count parameters in gradients (gradients are already flattened dict)
+        def count_arrays(d):
+            count = 0
+            for k, v in d.items():
+                if isinstance(v, dict):
+                    count += count_arrays(v)
+                elif isinstance(v, mx.array):
+                    count += 1
+            return count
         
-        grad_count = len(grad_params)
+        grad_count = count_arrays(gradients)
+        model_params = get_model_parameters(model)
         param_count = len(model_params)
         
         print(f"✅ Gradient flow: {grad_count} gradient parameters computed")
@@ -292,9 +300,15 @@ class TestEndToEndForwardPass:
         assert grad_count > 0, "No gradients computed"
         
         # Check that gradients are finite
-        for name, grad in grad_params.items():
-            if isinstance(grad, mx.array):
-                assert mx.isfinite(grad).all(), f"Non-finite gradients for {name}"
+        def check_finite_gradients(d, prefix=''):
+            for k, v in d.items():
+                full_name = f"{prefix}.{k}" if prefix else k
+                if isinstance(v, dict):
+                    check_finite_gradients(v, full_name)
+                elif isinstance(v, mx.array):
+                    assert mx.isfinite(v).all(), f"Non-finite gradients for {full_name}"
+        
+        check_finite_gradients(gradients)
 
 
 class TestMultiStepTrainingDynamics:
@@ -328,7 +342,7 @@ class TestMultiStepTrainingDynamics:
                 seed=42 + step
             )
             
-            def loss_fn(model, batch):
+            def loss_fn(batch):
                 carry = model.initial_carry(batch_size=batch['input_ids'].shape[0])
                 carry_out, outputs = model(carry, batch)
                 # Simple loss for testing - language modeling + Q-learning components
@@ -336,8 +350,9 @@ class TestMultiStepTrainingDynamics:
                 q_loss = mx.mean(outputs['q_halt_logits'] ** 2) + mx.mean(outputs['q_continue_logits'] ** 2)
                 return lm_loss + 0.1 * q_loss
             
-            # Training step
-            loss, gradients = mx.value_and_grad(loss_fn)(model, batch)
+            # Training step using standard MLX pattern
+            loss_and_grad_fn = nn.value_and_grad(model, loss_fn)
+            loss, gradients = loss_and_grad_fn(batch)
             optimizer.update(model, gradients)
             
             losses.append(float(loss))

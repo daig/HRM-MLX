@@ -226,10 +226,8 @@ class HRMTrainer:
         batch_size = processed_batch['input_ids'].shape[0]
         carry = self.loss_model.initial_carry(batch_size)
         
-        # Forward pass with loss computation
-        def loss_fn(model_params):
-            # Update model parameters temporarily for forward pass
-            self.loss_model.model.update(model_params)
+        # Forward pass with loss computation using standard MLX pattern
+        def loss_fn(processed_batch):
             new_carry, loss, metrics, _ = self.loss_model(carry, processed_batch)
             
             # Ensure loss is in float32 for numerical stability
@@ -238,9 +236,10 @@ class HRMTrainer:
             
             return loss, (new_carry, metrics)
         
-        # Compute loss and gradients using value_and_grad
+        # Compute loss and gradients using standard MLX approach
         # MLX automatically handles auxiliary data when function returns tuple
-        value_result, grads = mx.value_and_grad(loss_fn)(self.loss_model.model.parameters())
+        loss_and_grad_fn = nn.value_and_grad(self.loss_model.model, loss_fn)
+        value_result, grads = loss_and_grad_fn(processed_batch)
         loss, (new_carry, metrics) = value_result
         
         # Cast gradients to float32 for stability (critical for mixed precision)
