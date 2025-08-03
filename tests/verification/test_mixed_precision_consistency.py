@@ -148,16 +148,19 @@ class MixedPrecisionComplianceTest:
                 model = HRM_ACT(self.config)
                 model.set_training(False)  # Deterministic mode
                 
-                # Convert inputs to target precision if needed
-                if precision_config['compute_dtype'] != mx.float32:
-                    # For mixed precision, inputs are usually in the compute dtype
-                    batch_precision = {
-                        key: value.astype(precision_config['compute_dtype']) 
-                        if key != 'puzzle_ids' else value  # IDs stay as int32
-                        for key, value in batch.items()
-                    }
-                else:
-                    batch_precision = batch
+                # Convert inputs to target precision if needed (matching PyTorch reference)
+                # In PyTorch HRM: indices always stay integers, only float tensors get cast
+                batch_precision = {}
+                for key, value in batch.items():
+                    if key in ['puzzle_ids', 'input_ids', 'labels']:
+                        # Integer indices NEVER get cast - they must stay as integers
+                        batch_precision[key] = value
+                    else:
+                        # Only cast actual float tensors if using mixed precision
+                        if precision_config['compute_dtype'] != mx.float32:
+                            batch_precision[key] = value.astype(precision_config['compute_dtype'])
+                        else:
+                            batch_precision[key] = value
                 
                 # Run forward pass
                 carry = model.initial_carry(batch['input_ids'].shape[0])
@@ -265,12 +268,16 @@ class MixedPrecisionComplianceTest:
             # Convert BF16 loss back to FP32 for comparison
             loss_bf16_as_fp32 = loss_bf16.astype(mx.float32)
             
-            print(f"    FP32 loss: {loss_fp32:.6f}")
-            print(f"    BF16 loss: {loss_bf16_as_fp32:.6f}")
+            # Convert to scalar values for printing and comparison
+            loss_fp32_scalar = mx.mean(loss_fp32).item()
+            loss_bf16_scalar = mx.mean(loss_bf16_as_fp32).item()
+            
+            print(f"    FP32 loss: {loss_fp32_scalar:.6f}")
+            print(f"    BF16 loss: {loss_bf16_scalar:.6f}")
             
             # Check difference
-            loss_diff = mx.abs(loss_fp32 - loss_bf16_as_fp32)
-            relative_loss_diff = loss_diff / (loss_fp32 + 1e-8)
+            loss_diff = abs(loss_fp32_scalar - loss_bf16_scalar)
+            relative_loss_diff = loss_diff / (abs(loss_fp32_scalar) + 1e-8)
             
             print(f"    Absolute difference: {loss_diff:.6f}")
             print(f"    Relative difference: {relative_loss_diff:.6f}")
@@ -309,35 +316,42 @@ class MixedPrecisionComplianceTest:
                 model = HRM_ACT(self.config)
                 model.set_training(True)
                 
-                # Convert batch to target precision (except puzzle_ids)
-                batch_precision = {
-                    key: value.astype(precision_test['dtype']) 
-                    if key != 'puzzle_ids' and key != 'labels' else value
-                    for key, value in batch.items()
-                }
+                # Convert batch to target precision (matching PyTorch reference)
+                # In PyTorch HRM: indices always stay integers, only float tensors get cast
+                batch_precision = {}
+                for key, value in batch.items():
+                    if key in ['puzzle_ids', 'input_ids', 'labels']:
+                        # Integer indices NEVER get cast - they must stay as integers
+                        batch_precision[key] = value
+                    else:
+                        # Only cast actual float tensors if using mixed precision
+                        if precision_test['dtype'] != mx.float32:
+                            batch_precision[key] = value.astype(precision_test['dtype'])
+                        else:
+                            batch_precision[key] = value
                 
-                # Define loss function for gradient computation
-                def loss_fn(model, batch):
+                # Define loss function for gradient computation (MLX neural network approach)
+                def loss_fn(batch):
                     carry = model.initial_carry(batch['input_ids'].shape[0])
                     new_carry, outputs = model(carry, batch)
                     loss = stablemax_cross_entropy(outputs['logits'], batch['labels'])
-                    return loss
+                    return mx.mean(loss)  # Reduce to scalar for gradient computation
                 
-                # Compute gradients
-                loss_and_grads = mx.value_and_grad(loss_fn)
-                loss, grads = loss_and_grads(model, batch_precision)
+                # Compute gradients using MLX neural network approach
+                import mlx.nn as nn
+                loss_and_grads = nn.value_and_grad(model, loss_fn)
+                loss, grads = loss_and_grads(batch_precision)
                 
-                print(f"    Loss: {loss:.6f}")
+                loss_scalar = loss.item()
+                print(f"    Loss: {loss_scalar:.6f}")
                 print(f"    Number of gradient arrays: {len(grads)}")
                 
-                # Store gradients (convert to FP32 for comparison)
-                grads_fp32 = {}
-                for key, grad_array in grads.items():
-                    if grad_array is not None:
-                        grads_fp32[key] = grad_array.astype(mx.float32)
+                # Store gradients (convert to FP32 for comparison using tree_map)
+                from mlx.utils import tree_map
+                grads_fp32 = tree_map(lambda x: x.astype(mx.float32), grads)
                 
                 gradients_by_precision[precision_test['name']] = {
-                    'loss': loss.astype(mx.float32),
+                    'loss': loss.astype(mx.float32),  # Keep as MLX array for consistency
                     'gradients': grads_fp32
                 }
                 
@@ -353,49 +367,60 @@ class MixedPrecisionComplianceTest:
         fp32_data = gradients_by_precision['FP32']
         bf16_data = gradients_by_precision['BF16']
         
-        # Compare losses
-        loss_diff = mx.abs(fp32_data['loss'] - bf16_data['loss'])
-        loss_rel_diff = loss_diff / (fp32_data['loss'] + 1e-8)
+        # Compare losses (convert MLX arrays to scalars for display)
+        fp32_loss_scalar = fp32_data['loss'].item()
+        bf16_loss_scalar = bf16_data['loss'].item()
+        loss_diff = abs(fp32_loss_scalar - bf16_loss_scalar)
+        loss_rel_diff = loss_diff / (abs(fp32_loss_scalar) + 1e-8)
         
         print(f"    Loss comparison:")
-        print(f"      FP32 loss: {fp32_data['loss']:.6f}")
-        print(f"      BF16 loss: {bf16_data['loss']:.6f}")
+        print(f"      FP32 loss: {fp32_loss_scalar:.6f}")
+        print(f"      BF16 loss: {bf16_loss_scalar:.6f}")
         print(f"      Absolute diff: {loss_diff:.6f}")
         print(f"      Relative diff: {loss_rel_diff:.6f}")
         
         loss_consistent = loss_rel_diff < 0.05  # 5% tolerance
         
-        # Compare gradients for matching parameters
-        grad_comparisons = []
-        common_keys = set(fp32_data['gradients'].keys()) & set(bf16_data['gradients'].keys())
+        # Compare gradients using MLX tree utilities
+        from mlx.utils import tree_map, tree_flatten
         
-        print(f"    Gradient comparison for {len(common_keys)} common parameters:")
+        fp32_grads = fp32_data['gradients'] 
+        bf16_grads = bf16_data['gradients']
         
-        for key in sorted(list(common_keys))[:5]:  # Show first 5 for brevity
-            fp32_grad = fp32_data['gradients'][key]
-            bf16_grad = bf16_data['gradients'][key]
+        print(f"    Gradient comparison using MLX tree utilities...")
+        
+        # Compute differences using tree_map
+        try:
+            grad_diffs = tree_map(lambda x, y: mx.abs(x - y), fp32_grads, bf16_grads)
+            grad_magnitudes = tree_map(lambda x: mx.abs(x), fp32_grads)
             
-            grad_diff = mx.abs(fp32_grad - bf16_grad)
-            max_grad_diff = grad_diff.max()
-            mean_grad_diff = grad_diff.mean()
+            # Get max differences across entire gradient tree
+            max_diffs = tree_map(lambda x: mx.max(x), grad_diffs)
+            max_magnitudes = tree_map(lambda x: mx.max(x), grad_magnitudes)
             
-            # Relative error (handle near-zero gradients)
-            grad_magnitude = mx.abs(fp32_grad).max()
-            rel_error = max_grad_diff / (grad_magnitude + 1e-8)
+            # Compute relative errors
+            rel_errors = tree_map(lambda diff, mag: diff / (mag + 1e-8), max_diffs, max_magnitudes)
             
-            print(f"      {key[:30]}...")
-            print(f"        Max abs diff: {max_grad_diff:.6f}")
-            print(f"        Mean abs diff: {mean_grad_diff:.6f}")
-            print(f"        Relative error: {rel_error:.6f}")
+            # Flatten trees to get sample values for reporting
+            flat_diffs = tree_flatten(max_diffs)
+            flat_errors = tree_flatten(rel_errors)
             
-            # Gradient tolerance should be higher due to BF16 precision limits
-            within_tolerance = rel_error < 0.1  # 10% tolerance for gradients
-            grad_comparisons.append(within_tolerance)
+            print(f"      Sample gradient differences:")
+            for i, (path, diff) in enumerate(flat_diffs[:3]):  # Show first 3
+                print(f"        {path}: {diff.item():.6f}")
             
-            if within_tolerance:
-                print(f"        ✅ PASSED")
-            else:
-                print(f"        ❌ FAILED")
+            print(f"      Sample relative errors:")
+            grad_comparisons = []
+            for i, (path, rel_error) in enumerate(flat_errors[:5]):  # Check first 5
+                error_val = rel_error.item()
+                within_tolerance = error_val < 0.1  # 10% tolerance
+                grad_comparisons.append(within_tolerance)
+                status = "✅ PASSED" if within_tolerance else "❌ FAILED"
+                print(f"        {path}: {error_val:.6f} {status}")
+                
+        except Exception as e:
+            print(f"      ❌ Error in gradient comparison: {e}")
+            grad_comparisons = [False]
         
         overall_success = loss_consistent and all(grad_comparisons)
         
@@ -507,23 +532,30 @@ class MixedPrecisionComplianceTest:
                 precision_config = optimizer_config['precision']
                 
                 try:
-                    # Convert batch to appropriate precision
-                    batch_precision = {
-                        key: value.astype(precision_config['compute_dtype']) 
-                        if key not in ['puzzle_ids', 'labels'] else value
-                        for key, value in batch.items()
-                    }
+                    # Convert batch to appropriate precision (matching PyTorch reference)
+                    batch_precision = {}
+                    for key, value in batch.items():
+                        if key in ['puzzle_ids', 'input_ids', 'labels']:
+                            # Integer indices NEVER get cast - they must stay as integers
+                            batch_precision[key] = value
+                        else:
+                            # Only cast actual float tensors if using mixed precision
+                            if precision_config['compute_dtype'] != mx.float32:
+                                batch_precision[key] = value.astype(precision_config['compute_dtype'])
+                            else:
+                                batch_precision[key] = value
                     
                     # Forward pass and loss computation
-                    def loss_fn(model):
-                        carry = model.initial_carry(batch_precision['input_ids'].shape[0])
-                        new_carry, outputs = model(carry, batch_precision)
-                        loss = stablemax_cross_entropy(outputs['logits'], batch_precision['labels'])
-                        return loss
+                    def loss_fn(batch):
+                        carry = model.initial_carry(batch['input_ids'].shape[0])
+                        new_carry, outputs = model(carry, batch)
+                        loss = stablemax_cross_entropy(outputs['logits'], batch['labels'])
+                        return mx.mean(loss)
                     
-                    # Compute loss and gradients
-                    loss_and_grads = mx.value_and_grad(loss_fn)
-                    loss, grads = loss_and_grads(model)
+                    # Compute loss and gradients using MLX neural network approach
+                    import mlx.nn as nn
+                    loss_and_grads = nn.value_and_grad(model, loss_fn)
+                    loss, grads = loss_and_grads(batch_precision)
                     
                     # Simple parameter update (scaled down to prevent instability)
                     lr = optimizer_config['learning_rate'] * 0.1  # Small learning rate
