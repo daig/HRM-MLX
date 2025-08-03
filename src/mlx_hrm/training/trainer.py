@@ -226,53 +226,19 @@ class HRMTrainer:
         batch_size = processed_batch['input_ids'].shape[0]
         carry = self.loss_model.initial_carry(batch_size)
         
-        # Forward pass with loss computation using standard MLX pattern
+        # Forward pass using ACTLossHead (matches PyTorch reference pattern)
         def loss_fn(processed_batch):
-            # Call base model directly but use ACTLossHead's exact loss computation
-            new_carry, outputs = self.loss_model.model(carry, processed_batch)
-            
-            # Use ACTLossHead logic directly to ensure exact match with reference
-            labels = processed_batch['labels'] 
-            logits = outputs['logits']
-            
-            # Language modeling loss (exact ACTLossHead implementation)
-            lm_loss = self.loss_model.loss_fn(logits, labels, reduction='mean')
-            
-            # ACT Q-learning losses (exact ACTLossHead implementation) 
-            q_halt_logits = outputs['q_halt_logits']
-            q_continue_logits = outputs['q_continue_logits']
-            
-            # For now, simplified Q-loss - TODO: implement full ACT formulation
-            # This should match the PyTorch reference's binary cross-entropy approach
-            from mlx import nn as mlx_nn
-            seq_is_correct = mx.ones_like(q_halt_logits)  # Placeholder - needs proper ACT logic
-            q_halt_loss = mlx_nn.losses.binary_cross_entropy(
-                mx.sigmoid(q_halt_logits), 
-                seq_is_correct.astype(mx.float32), 
-                reduction='sum'
-            )
-            q_continue_loss = mx.array(0.0)  # Simplified for now
-            
-            # Use exact PyTorch weighting: lm_loss + 0.5 * (q_halt_loss + q_continue_loss)
-            total_loss = lm_loss + 0.5 * (q_halt_loss + q_continue_loss)
+            # Let ACTLossHead handle all loss computation - clean separation like PyTorch
+            new_carry, total_loss, metrics, outputs = self.loss_model(carry, processed_batch)
             
             # Ensure loss is in float32 for numerical stability
             if hasattr(total_loss, 'astype'):
                 total_loss = total_loss.astype(mx.float32)
             
-            # Create metrics matching ACTLossHead
-            metrics = {
-                'lm_loss': float(lm_loss),
-                'q_halt_loss': float(q_halt_loss), 
-                'q_continue_loss': float(q_continue_loss),
-                'total_loss': float(total_loss)
-            }
-            
             return total_loss, (new_carry, metrics)
         
-        # Compute loss and gradients using standard MLX approach
-        # MLX automatically handles auxiliary data when function returns tuple
-        loss_and_grad_fn = nn.value_and_grad(self.loss_model.model, loss_fn)
+        # Compute gradients for the full loss model (since it contains trainable parameters)
+        loss_and_grad_fn = nn.value_and_grad(self.loss_model, loss_fn)
         value_result, grads = loss_and_grad_fn(processed_batch)
         loss, (new_carry, metrics) = value_result
         
