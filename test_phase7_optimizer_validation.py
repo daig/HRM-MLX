@@ -59,15 +59,17 @@ def test_adam_atan2_convergence():
     print(f"  Target: {target}")
     print(f"  Final x: {x}")
     
-    # Should converge reasonably well (atan2 has different convergence behavior)
+    # Adam-atan2 converges more conservatively than standard Adam due to bounded updates
+    # It's designed for stability in neural network training, not speed on simple quadratics
     improvement_ratio = initial_loss / final_loss
-    assert improvement_ratio > 50, f"Insufficient improvement: {improvement_ratio}x"
-    assert final_loss < 1.0, f"Loss too high: {final_loss}"
+    assert improvement_ratio > 100, f"Insufficient improvement: {improvement_ratio}x"
+    assert final_loss < 0.2, f"Loss too high: {final_loss}"
     
-    # Check we're moving in the right direction
+    # Check we're moving toward target (within reasonable bounds for atan2's conservative nature)
     distance_to_target = mx.sqrt(mx.sum((x - target) ** 2)).item()
     initial_distance = mx.sqrt(mx.sum((mx.array([0.0, 0.0, 0.0]) - target) ** 2)).item()
     assert distance_to_target < initial_distance, f"Not moving toward target: {distance_to_target} vs {initial_distance}"
+    assert distance_to_target < 0.5, f"Distance to target too large: {distance_to_target}"
     
     print("✅ Adam-atan2 convergence test passed")
 
