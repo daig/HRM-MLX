@@ -27,6 +27,26 @@ from mlx_hrm.training.losses import stablemax_cross_entropy
 class TrainingStepParityTest:
     """Test suite for complete training step equivalence."""
     
+    @staticmethod
+    def flatten_grad_dict(d, prefix=''):
+        """Flatten nested gradient dictionary to access individual arrays."""
+        items = []
+        for k, v in d.items():
+            new_key = f"{prefix}.{k}" if prefix else k
+            if isinstance(v, dict):
+                items.extend(TrainingStepParityTest.flatten_grad_dict(v, new_key))
+            elif isinstance(v, list):
+                # Handle lists (e.g., transformer blocks)
+                for i, item in enumerate(v):
+                    list_key = f"{new_key}[{i}]"
+                    if isinstance(item, dict):
+                        items.extend(TrainingStepParityTest.flatten_grad_dict(item, list_key))
+                    else:
+                        items.append((list_key, item))
+            else:
+                items.append((new_key, v))
+        return items
+    
     def __init__(self):
         # Small configuration for manageable testing
         self.config = HRMConfig(
@@ -198,7 +218,10 @@ class TrainingStepParityTest:
             non_zero_grads = 0
             total_grad_norm = 0.0
             
-            for name, grad in grads.items():
+            # Flatten nested gradient dictionary to access individual arrays
+            flat_grads = self.flatten_grad_dict(grads)
+            
+            for name, grad in flat_grads:
                 if grad is not None:
                     grad_norm = mx.sum(grad * grad)
                     total_grad_norm += grad_norm
@@ -216,11 +239,16 @@ class TrainingStepParityTest:
                 loss2, grads2 = loss_and_grads_fn(batch)
                 
                 grad_consistency = True
-                for name in grads.keys():
-                    if grads[name] is not None and grads2[name] is not None:
-                        grad_diff = mx.abs(grads[name] - grads2[name]).max()
+                flat_grads2 = self.flatten_grad_dict(grads2)
+                
+                # Create lookup for grads2
+                grads2_lookup = {name: grad for name, grad in flat_grads2}
+                
+                for name, grad in flat_grads:
+                    if grad is not None and name in grads2_lookup and grads2_lookup[name] is not None:
+                        grad_diff = mx.abs(grad - grads2_lookup[name]).max()
                         if grad_diff > 1e-10:
-                            print(f"    ❌ Gradient inconsistency in {name}: {grad_diff}")
+                            print(f"    ❌ Gradient inconsistency in {name}: {float(grad_diff)}")
                             grad_consistency = False
                 
                 if grad_consistency:
@@ -268,9 +296,14 @@ class TrainingStepParityTest:
             updated_params = {}
             param_changes = {}
             
-            for name, param in model.parameters().items():
-                if name in grads and grads[name] is not None:
-                    grad = grads[name]
+            # Flatten parameter dictionaries for proper arithmetic
+            flat_params = self.flatten_grad_dict(model.parameters())
+            flat_grads = self.flatten_grad_dict(grads)
+            grads_lookup = {name: grad for name, grad in flat_grads}
+            
+            for name, param in flat_params:
+                if name in grads_lookup and grads_lookup[name] is not None:
+                    grad = grads_lookup[name]
                     
                     # Simple SGD with weight decay: p = p * (1 - lr * wd) - lr * grad
                     if wd > 0:
@@ -279,13 +312,11 @@ class TrainingStepParityTest:
                         param_decayed = param
                     
                     updated_param = param_decayed - lr * grad
-                    updated_params[name] = updated_param
                     
                     # Track changes
                     change = mx.abs(updated_param - param).max()
-                    param_changes[name] = change
+                    param_changes[name] = float(change)
                 else:
-                    updated_params[name] = param
                     param_changes[name] = 0.0
             
             # Show parameter changes
@@ -357,7 +388,8 @@ class TrainingStepParityTest:
                 
                 # Compute parameter norm
                 total_param_norm = 0.0
-                for name, param in model.parameters().items():
+                flat_params = self.flatten_grad_dict(model.parameters())
+                for name, param in flat_params:
                     param_norm = mx.sum(param * param)
                     total_param_norm += param_norm
                 

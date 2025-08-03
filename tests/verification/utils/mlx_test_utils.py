@@ -181,25 +181,7 @@ class MLXTestingPatterns:
             
         except Exception as e:
             print(f"Error in gradient computation: {e}")
-            
-            # Fallback: try to compute loss without gradients
-            try:
-                carry = model.initial_carry(batch['input_ids'].shape[0])
-                new_carry, outputs = model(carry, batch)
-                loss = stablemax_cross_entropy(outputs['logits'], batch['labels'], reduction='mean')
-                
-                # Create empty gradients structure
-                params = model.parameters()
-                dummy_grads = {name: mx.zeros_like(param) for name, param in params.items()}
-                
-                return loss, dummy_grads
-                
-            except Exception as e2:
-                print(f"Fallback also failed: {e2}")
-                # Return dummy values to avoid breaking tests
-                dummy_loss = mx.array(0.0)
-                dummy_grads = {}
-                return dummy_loss, dummy_grads
+            raise e  # Don't mask gradient computation failures
     
     @staticmethod
     def compare_model_outputs(outputs1: Dict[str, mx.array], 
