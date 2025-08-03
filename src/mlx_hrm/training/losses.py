@@ -51,7 +51,9 @@ def log_stablemax(x: mx.array, axis: int = -1) -> mx.array:
     s_x = s_function(x_f32)
     
     # Compute log probabilities
-    log_probs = mx.log(s_x) - mx.log(mx.sum(s_x, axis=axis, keepdims=True))
+    # Promote to FP32 for sum (matches PyTorch mixed precision behavior)
+    s_x_sum = mx.sum(s_x.astype(mx.float32), axis=axis, keepdims=True).astype(s_x.dtype)
+    log_probs = mx.log(s_x) - mx.log(s_x_sum)
     
     # Cast back to original dtype if necessary
     if x.dtype != mx.float32:
@@ -107,9 +109,11 @@ def stablemax_cross_entropy(
     
     # Apply reduction
     if reduction == 'mean':
-        return mx.mean(loss)
+        # Promote to FP32 for mean (matches PyTorch mixed precision behavior)
+        return mx.mean(loss.astype(mx.float32)).astype(loss.dtype)
     elif reduction == 'sum':
-        return mx.sum(loss)
+        # Promote to FP32 for sum (matches PyTorch mixed precision behavior)
+        return mx.sum(loss.astype(mx.float32)).astype(loss.dtype)
     else:  # 'none'
         return loss
 
@@ -151,8 +155,10 @@ def softmax_cross_entropy(
     
     # Apply reduction
     if reduction == 'mean':
-        return mx.mean(losses)
+        # Promote to FP32 for mean (matches PyTorch mixed precision behavior)
+        return mx.mean(losses.astype(mx.float32)).astype(losses.dtype)
     elif reduction == 'sum':
-        return mx.sum(losses)
+        # Promote to FP32 for sum (matches PyTorch mixed precision behavior)
+        return mx.sum(losses.astype(mx.float32)).astype(losses.dtype)
     else:  # 'none'
         return losses

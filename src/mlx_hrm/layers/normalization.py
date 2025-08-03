@@ -27,7 +27,9 @@ def rms_norm(hidden_states: mx.array, variance_epsilon: float = 1e-5) -> mx.arra
     hidden_states = hidden_states.astype(mx.float32)
     
     # Compute RMS: sqrt(mean(x²))
-    variance = mx.mean(mx.square(hidden_states), axis=-1, keepdims=True)
+    # Promote to FP32 for mean computation (matches PyTorch mixed precision behavior)
+    squared_states = mx.square(hidden_states)
+    variance = mx.mean(squared_states.astype(mx.float32), axis=-1, keepdims=True).astype(squared_states.dtype)
     
     # Normalize by RMS using rsqrt for efficiency
     hidden_states = hidden_states * mx.rsqrt(variance + variance_epsilon)

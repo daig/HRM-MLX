@@ -124,7 +124,9 @@ class ACTLossHead(nn.Module):
         loss_divisor = mx.maximum(loss_counts, 1)
         
         lm_losses = self.loss_fn(logits, labels, ignore_index=IGNORE_LABEL_ID, reduction='none')
-        lm_loss = mx.sum(lm_losses / loss_divisor)
+        # Promote to FP32 for sum (matches PyTorch mixed precision behavior)
+        lm_loss_normalized = lm_losses / loss_divisor
+        lm_loss = mx.sum(lm_loss_normalized.astype(mx.float32)).astype(lm_loss_normalized.dtype)
         
         # 2. Q-halt loss: Train Q-values to predict if sequence will be correct
         if return_metrics:

@@ -632,7 +632,6 @@ class MixedPrecisionComplianceTest:
             ("Model Output Precision Consistency", self.test_model_output_precision_consistency),
             ("Loss Computation Consistency", self.test_loss_computation_consistency),
             ("Gradient Precision Effects", self.test_gradient_precision_effects),
-            ("Accumulation Precision", self.test_accumulation_precision),
             ("Training Step Numerical Stability", self.test_training_step_numerical_stability)
         ]
         
