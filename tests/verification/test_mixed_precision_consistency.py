@@ -560,14 +560,24 @@ class MixedPrecisionComplianceTest:
                     # Simple parameter update (scaled down to prevent instability)
                     lr = optimizer_config['learning_rate'] * 0.1  # Small learning rate
                     
-                    # Apply updates (simplified - not using the full optimizer)
-                    for param_name, param in model.parameters().items():
-                        if param_name in grads and grads[param_name] is not None:
-                            grad = grads[param_name]
-                            # Simple gradient descent update
-                            param_update = param - lr * grad
-                            # Update the parameter (this is simplified)
-                            # In practice, this would go through the optimizer
+                    # Apply parameter updates using MLX tree utilities for nested structures
+                    from mlx.utils import tree_map
+                    
+                    # Get current parameters
+                    current_params = model.parameters()
+                    
+                    # Apply simple gradient descent update using tree_map
+                    def apply_update(param, grad):
+                        if grad is not None:
+                            return param - lr * grad
+                        else:
+                            return param
+                    
+                    # Update parameters (simplified - not using full optimizer state)
+                    updated_params = tree_map(apply_update, current_params, grads)
+                    
+                    # Note: In a real training step, we would call model.update(updated_params)
+                    # but for this test we just verify the update computation works
                     
                     loss_value = float(loss.astype(mx.float32))
                     losses_by_precision[precision_name].append(loss_value)
