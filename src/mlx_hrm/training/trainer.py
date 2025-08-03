@@ -2,6 +2,7 @@
 
 import mlx.core as mx
 import mlx.nn as nn
+import mlx.utils
 from typing import Dict, Optional, Any, Iterator
 from pathlib import Path
 import time
@@ -40,7 +41,9 @@ class HRMTrainer:
         checkpoint_every_n_steps: int = 1000,
         eval_every_n_steps: int = 500,
         early_stopping_patience: Optional[int] = None,
-        use_mixed_precision: bool = True,
+        use_mixed_precision: bool = False,
+        mixed_precision_dtype: str = 'float16',
+        mixed_precision_components: Optional[list] = None,
         log_every_n_steps: int = 10,
         max_training_steps: Optional[int] = None,
         warmup_steps: int = 10000
@@ -60,7 +63,9 @@ class HRMTrainer:
             checkpoint_every_n_steps: Checkpoint frequency
             eval_every_n_steps: Evaluation frequency
             early_stopping_patience: Steps for early stopping
-            use_mixed_precision: Whether to use mixed precision
+            use_mixed_precision: Whether to use mixed precision (disabled by default)
+            mixed_precision_dtype: Dtype for mixed precision ('float16' or 'bfloat16')
+            mixed_precision_components: List of components to use mixed precision on
             log_every_n_steps: Logging frequency
             max_training_steps: Maximum training steps for LR scheduling
             warmup_steps: Linear warmup steps
@@ -88,7 +93,30 @@ class HRMTrainer:
         # Training settings
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.max_grad_norm = max_grad_norm
+        
+        # Mixed precision settings
         self.use_mixed_precision = use_mixed_precision
+        
+        # Validate and set precision dtype
+        try:
+            self.mixed_precision_dtype = getattr(mx, mixed_precision_dtype)
+        except AttributeError:
+            raise ValueError(f"Invalid mixed precision dtype: {mixed_precision_dtype}. "
+                           f"Must be one of: float16, bfloat16")
+        
+        # Configure which batch keys to cast to mixed precision
+        if mixed_precision_components is None:
+            # Default: cast only input tokens, keep labels/puzzle_id in original dtype for stability
+            mixed_precision_components = ['input_ids']
+        self.mixed_precision_keys = set(mixed_precision_components)
+        
+        # Print mixed precision status
+        if self.use_mixed_precision:
+            print(f"Mixed precision enabled: {mixed_precision_dtype}")
+            print(f"  Keys to cast: {sorted(self.mixed_precision_keys)}")
+            print(f"  Other keys remain float32 for stability")
+        else:
+            print("Mixed precision disabled (using float32 throughout)")
         
         # Checkpointing
         self.checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else None
@@ -132,47 +160,125 @@ class HRMTrainer:
             sparse_weight_decay=config.get('sparse_weight_decay', 0.1)
         )
     
+    def _prepare_batch_for_mixed_precision(self, batch: Dict[str, mx.array]) -> Dict[str, mx.array]:
+        """
+        Prepare batch with appropriate dtypes for mixed precision.
+        
+        Strategy:
+        - Cast configured input keys to mixed precision for speed/memory
+        - Keep labels, targets, and unconfigured keys in original dtype for stability
+        - Only cast actual MLX arrays, skip other data types
+        """
+        if not self.use_mixed_precision:
+            return batch
+        
+        mixed_precision_batch = {}
+        for key, value in batch.items():
+            # Only cast MLX arrays that are in our configured set
+            if (key in self.mixed_precision_keys and 
+                isinstance(value, mx.array) and 
+                value.dtype in [mx.int32, mx.int64, mx.float32]):  # Only cast from these dtypes
+                try:
+                    mixed_precision_batch[key] = value.astype(self.mixed_precision_dtype)
+                except Exception as e:
+                    # If casting fails, keep original and warn
+                    print(f"Warning: Failed to cast {key} to {self.mixed_precision_dtype}: {e}")
+                    mixed_precision_batch[key] = value
+            else:
+                # Keep original dtype for labels, non-arrays, or unconfigured keys
+                mixed_precision_batch[key] = value
+        
+        return mixed_precision_batch
+    
+    def _cast_gradients_to_float32(self, grads):
+        """
+        Cast all gradients to float32 for optimizer stability.
+        
+        This is crucial for mixed precision training - gradients should always
+        be accumulated and applied in float32 for numerical stability.
+        Uses tree_map to handle nested gradient structures.
+        """
+        if not self.use_mixed_precision:
+            return grads
+        
+        def cast_to_float32(x):
+            # Only cast actual MLX arrays, skip dict/nested structures
+            if isinstance(x, mx.array):
+                return x.astype(mx.float32)
+            return x
+        
+        return mlx.utils.tree_map(cast_to_float32, grads)
+    
     def _training_step(self, batch: Dict[str, mx.array]) -> tuple[mx.array, Dict[str, mx.array], Dict]:
-        """Single training step."""
+        """
+        Single training step with optional mixed precision support.
+        
+        Strategy:
+        - Cast input tensors to mixed precision for forward pass
+        - Keep loss computation in float32 for stability  
+        - Cast gradients back to float32 for optimizer updates
+        - Avoid mixed precision for sensitive components (ACT, sparse embeddings)
+        """
+        # Prepare batch with appropriate dtypes
+        processed_batch = self._prepare_batch_for_mixed_precision(batch)
+        
         # Get initial carry
-        batch_size = batch['input_ids'].shape[0]
+        batch_size = processed_batch['input_ids'].shape[0]
         carry = self.loss_model.initial_carry(batch_size)
         
         # Forward pass with loss computation
         def loss_fn(model_params):
             # Update model parameters temporarily for forward pass
             self.loss_model.model.update(model_params)
-            new_carry, loss, metrics, _ = self.loss_model(carry, batch)
+            new_carry, loss, metrics, _ = self.loss_model(carry, processed_batch)
+            
+            # Ensure loss is in float32 for numerical stability
+            if hasattr(loss, 'astype'):
+                loss = loss.astype(mx.float32)
+            
             return loss, (new_carry, metrics)
         
         # Compute loss and gradients using value_and_grad
-        (loss, (new_carry, metrics)), grads = mx.value_and_grad(
-            loss_fn, has_aux=True
-        )(self.loss_model.model.parameters())
+        # MLX automatically handles auxiliary data when function returns tuple
+        value_result, grads = mx.value_and_grad(loss_fn)(self.loss_model.model.parameters())
+        loss, (new_carry, metrics) = value_result
+        
+        # Cast gradients to float32 for stability (critical for mixed precision)
+        grads = self._cast_gradients_to_float32(grads)
         
         # Scale loss for gradient accumulation
         loss = loss / self.gradient_accumulation_steps
         
-        # Scale gradients too
-        grads = {k: v / self.gradient_accumulation_steps for k, v in grads.items()}
+        # Scale gradients too (use tree_map for nested structures)
+        def scale_grad(x):
+            # Only scale actual MLX arrays, skip dict/nested structures
+            if isinstance(x, mx.array):
+                return x / self.gradient_accumulation_steps
+            return x
+        grads = mlx.utils.tree_map(scale_grad, grads)
         
         return loss, grads, metrics
     
-    def _clip_gradients(self, grads: Dict[str, mx.array]) -> Dict[str, mx.array]:
-        """Clip gradients by global norm."""
+    def _clip_gradients(self, grads):
+        """Clip gradients by global norm using tree operations."""
         if self.max_grad_norm is None:
             return grads
         
-        # Compute global norm
-        total_norm_sq = 0.0
-        for grad in grads.values():
-            total_norm_sq += mx.sum(grad ** 2).item()
-        total_norm = math.sqrt(total_norm_sq)
+        # Compute global norm using tree operations
+        def norm_sq(x):
+            # Only process actual MLX arrays
+            if isinstance(x, mx.array):
+                return mx.sum(x ** 2)
+            return mx.array(0.0)
+        
+        norm_sq_values = mlx.utils.tree_map(norm_sq, grads)
+        total_norm_sq = mlx.utils.tree_reduce(lambda x, y: x + y, norm_sq_values, mx.array(0.0))
+        total_norm = mx.sqrt(total_norm_sq).item()
         
         # Clip if needed
         if total_norm > self.max_grad_norm:
             scale = self.max_grad_norm / total_norm
-            grads = {k: v * scale for k, v in grads.items()}
+            grads = mlx.utils.tree_map(lambda x: x * scale if isinstance(x, mx.array) else x, grads)
             print(f"Gradients clipped: {total_norm:.4f} -> {self.max_grad_norm}")
         
         return grads
@@ -257,11 +363,18 @@ class HRMTrainer:
         
         for batch in self.val_dataloader:
             try:
-                batch_size = batch['input_ids'].shape[0]
+                # Prepare batch with appropriate dtypes for mixed precision
+                processed_batch = self._prepare_batch_for_mixed_precision(batch)
+                
+                batch_size = processed_batch['input_ids'].shape[0]
                 carry = self.loss_model.initial_carry(batch_size)
                 
                 # Forward pass without gradients
-                new_carry, loss, metrics, _ = self.loss_model(carry, batch)
+                new_carry, loss, metrics, _ = self.loss_model(carry, processed_batch)
+                
+                # Ensure loss is in float32 for accumulation
+                if hasattr(loss, 'astype'):
+                    loss = loss.astype(mx.float32)
                 
                 total_loss += loss.item()
                 self.val_metrics.update(metrics)
@@ -486,7 +599,9 @@ def create_trainer(
         'checkpoint_every_n_steps': 1000,
         'eval_every_n_steps': 500,
         'log_every_n_steps': 10,
-        'use_mixed_precision': True,
+        'use_mixed_precision': False,  # Disabled by default for stability/reproducibility
+        'mixed_precision_dtype': 'float16',
+        'mixed_precision_components': ['input_ids'],  # Only cast input tokens to mixed precision
         'warmup_steps': 10000
     }
     
