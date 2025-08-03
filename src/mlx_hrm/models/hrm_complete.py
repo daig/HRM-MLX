@@ -93,6 +93,23 @@ class HRM(nn.Module):
         """
         return self.model.initial_carry(batch_size)
     
+    def named_parameters(self):
+        """
+        Return named parameters like PyTorch for test compatibility.
+        
+        Returns:
+            Iterator of (name, parameter) tuples
+        """
+        def flatten_dict(d, prefix=''):
+            for k, v in d.items():
+                name = f"{prefix}.{k}" if prefix else k
+                if isinstance(v, dict):
+                    yield from flatten_dict(v, name)
+                elif isinstance(v, mx.array):
+                    yield (name, v)
+        
+        return flatten_dict(self.parameters())
+    
     def forward_single(
         self, 
         input_ids: mx.array,
