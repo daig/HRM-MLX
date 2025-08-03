@@ -110,8 +110,8 @@ class SwiGLU(nn.Module):
         gate, up = mx.split(gate_up, 2, axis=-1)
         
         # Apply SiLU (Swish) activation to gate and multiply with up
-        # SiLU(x) = x * sigmoid(x)
-        gate_activated = gate * mx.sigmoid(gate)
+        # Using native MLX nn.silu for optimal performance
+        gate_activated = nn.silu(gate)
         output = self.down_proj(gate_activated * up)
         
         return output
@@ -122,8 +122,7 @@ def silu(x: mx.array) -> mx.array:
     
     SiLU(x) = x * sigmoid(x)
     
-    This is provided for reference, but mx.silu should be used directly
-    for better performance.
+    This now uses MLX's native nn.silu for optimal performance.
     
     Args:
         x: Input tensor
@@ -131,7 +130,7 @@ def silu(x: mx.array) -> mx.array:
     Returns:
         Activated tensor
     """
-    return x * mx.sigmoid(x)
+    return nn.silu(x)
 
 
 class SwiGLUFactory:
@@ -287,8 +286,8 @@ class PrecisionAwareSwiGLU(nn.Module):
         
         # Apply SiLU (Swish) activation to gate and multiply with up
         # All computation happens in forward dtype (BF16)
-        # SiLU(x) = x * sigmoid(x)
-        gate_activated = gate * mx.sigmoid(gate)
+        # Using native MLX nn.silu for optimal performance
+        gate_activated = nn.silu(gate)
         
         # Final down projection using precision-aware linear layer
         output = self.down_proj(gate_activated * up)
