@@ -27,9 +27,14 @@ This master plan provides a comprehensive roadmap for implementing the Hierarchi
   - ✅ SwiGLU Activation
   - ✅ Sparse Embeddings
   - ✅ Rotary Position Embeddings
-- ⏳ **Phase 3**: Complex Modules - READY TO START
-  - ⏹️ Multi-Head Attention (next)
-- ⏹️ **Phases 4-9**: Pending
+- ✅ **Phase 3**: Complex Modules - COMPLETE
+  - ✅ Multi-Head Attention with GQA
+- ✅ **Phase 4**: Advanced Features - COMPLETE
+  - ✅ Adaptive Computation Time (ACT)
+- ⏳ **Phase 5**: Model Integration - READY TO START
+  - ⏹️ Complete model assembly (next)
+  - ⏹️ Configuration system
+- ⏹️ **Phases 6-9**: Detailed plans created
 
 ## Table of Contents
 
@@ -258,45 +263,159 @@ MLX/  # Located at ~/Documents/MLX/
 
 **Goal**: Assemble all components into the complete HRM model
 
-#### 5.1 HRM Block
-- **Module**: `src/mlx_hrm/models/hrm_block.py`
-- **Dependencies**: All components
+#### 5.1 Complete Model Assembly
+- **Plan**: `MLX_MODEL_INTEGRATION_PLAN.md`
+- **Module**: `src/mlx_hrm/models/hrm_complete.py`
+- **Dependencies**: All Phase 1-4 components
 - **Key Tasks**:
-  - [ ] Integrate attention and FFN modules
-  - [ ] Implement residual connections
-  - [ ] Add ACT mechanism integration
-  - [ ] Test block functionality
+  - [ ] Create unified HRM wrapper class
+  - [ ] Integrate HRM_ACT as main model
+  - [ ] Add model factory functions
+  - [ ] Implement checkpoint loading/saving
+  - [ ] Create inference-specific methods
 
-#### 5.2 Complete HRM Model
-- **Module**: `src/mlx_hrm/models/hrm_model.py`
-- **Dependencies**: HRM blocks, embeddings
+#### 5.2 Configuration System
+- **Plan**: `MLX_MODEL_INTEGRATION_PLAN.md`
+- **Module**: `src/mlx_hrm/configs/model_configs.py`
+- **Dependencies**: HRMConfig from ACT module
 - **Key Tasks**:
-  - [ ] Stack HRM blocks into full model
-  - [ ] Add input/output projections
-  - [ ] Implement model configuration system
-  - [ ] Create model factory functions
-  - [ ] Test full forward pass
+  - [ ] Define model presets (tiny, small, base)
+  - [ ] Create configuration validation
+  - [ ] Support YAML/JSON loading
+  - [ ] Add preset management functions
+  - [ ] Test configuration system
 
-### Phase 6: Training Infrastructure (Week 5-6)
+### Phase 6: Loss Functions & Metrics (Week 5)
 
-**Goal**: Build training and evaluation capabilities
+**Goal**: Implement HRM-specific loss functions and training metrics
 
-#### 6.1 Training Utilities
-- **Module**: `src/mlx_hrm/training/`
+#### 6.1 Stablemax Loss
+- **Plan**: `MLX_LOSS_FUNCTIONS_PLAN.md`
+- **Module**: `src/mlx_hrm/training/losses.py`
+- **Dependencies**: None (standalone)
 - **Key Tasks**:
-  - [ ] Port Adam-atan2 optimizer
-  - [ ] Implement training loop with MLX
+  - [ ] Implement S-function for stablemax
+  - [ ] Create stablemax cross-entropy loss
+  - [ ] Add softmax baseline for comparison
+  - [ ] Test numerical stability
+  - [ ] Benchmark performance
+
+#### 6.2 ACT Loss Components
+- **Plan**: `MLX_LOSS_FUNCTIONS_PLAN.md`
+- **Module**: `src/mlx_hrm/training/act_loss.py`
+- **Dependencies**: Loss functions, HRM model
+- **Key Tasks**:
+  - [ ] Implement ACTLossHead wrapper
+  - [ ] Add language modeling loss
+  - [ ] Create Q-halt loss (binary cross-entropy)
+  - [ ] Implement Q-continue loss (TD learning)
+  - [ ] Track training metrics
+
+### Phase 7: Training Infrastructure (Week 5-6)
+
+**Goal**: Build complete training pipeline with MLX optimizations
+
+#### 7.1 Adam-atan2 Optimizer
+- **Plan**: `MLX_TRAINING_INFRASTRUCTURE_PLAN.md`
+- **Module**: `src/mlx_hrm/training/optimizers.py`
+- **Dependencies**: MLX optimizer framework
+- **Key Tasks**:
+  - [ ] Port Adam-atan2 for sparse embeddings
+  - [ ] Create sparse-aware optimizer wrapper
+  - [ ] Support parameter groups
+  - [ ] Add gradient clipping
+  - [ ] Test convergence properties
+
+#### 7.2 Training Loop
+- **Plan**: `MLX_TRAINING_INFRASTRUCTURE_PLAN.md`
+- **Module**: `src/mlx_hrm/training/trainer.py`
+- **Dependencies**: Model, optimizers, losses
+- **Key Tasks**:
+  - [ ] Implement HRMTrainer class
   - [ ] Add gradient accumulation
-  - [ ] Create checkpoint utilities
-  - [ ] Build data loading pipeline
+  - [ ] Create validation loop
+  - [ ] Implement checkpointing
+  - [ ] Add early stopping
 
-#### 6.2 Evaluation and Benchmarking
+#### 7.3 Data Pipeline
+- **Plan**: `MLX_TRAINING_INFRASTRUCTURE_PLAN.md`
+- **Module**: `src/mlx_hrm/data/dataset.py`
+- **Dependencies**: None (standalone)
 - **Key Tasks**:
-  - [ ] Port evaluation metrics
-  - [ ] Create benchmark suite
-  - [ ] Compare with PyTorch reference
-  - [ ] Profile memory and speed
-  - [ ] Validate on ARC tasks
+  - [ ] Create PuzzleDataset class
+  - [ ] Support ARC/Sudoku/Maze formats
+  - [ ] Implement efficient DataLoader
+  - [ ] Add data augmentation
+  - [ ] Test loading performance
+
+### Phase 8: Validation & Testing (Week 6)
+
+**Goal**: Ensure MLX implementation matches PyTorch performance
+
+#### 8.1 Checkpoint Conversion
+- **Plan**: `MLX_VALIDATION_PLAN.md`
+- **Module**: `scripts/convert_checkpoint.py`
+- **Dependencies**: Model structure
+- **Key Tasks**:
+  - [ ] Implement bidirectional converter
+  - [ ] Handle parameter name mapping
+  - [ ] Convert optimizer states
+  - [ ] Validate converted weights
+  - [ ] Test on multiple model sizes
+
+#### 8.2 Numerical Validation
+- **Plan**: `MLX_VALIDATION_PLAN.md`
+- **Module**: `tests/validation/test_numerical_parity.py`
+- **Dependencies**: Both MLX and PyTorch models
+- **Key Tasks**:
+  - [ ] Compare forward pass outputs
+  - [ ] Validate gradient computations
+  - [ ] Check loss values match
+  - [ ] Test ACT behavior equivalence
+  - [ ] Profile numerical differences
+
+#### 8.3 Performance & Accuracy
+- **Plan**: `MLX_VALIDATION_PLAN.md`
+- **Modules**: 
+  - `benchmarks/benchmark_full_model.py`
+  - `tests/validation/test_puzzle_accuracy.py`
+- **Key Tasks**:
+  - [ ] Benchmark training throughput
+  - [ ] Measure inference speed
+  - [ ] Test on ARC-1 dataset (target: 42%)
+  - [ ] Validate on Sudoku (target: 98%)
+  - [ ] Compare with published results
+
+### Phase 9: Documentation & Examples (Week 6)
+
+**Goal**: Create comprehensive documentation and usage examples
+
+#### 9.1 API Documentation
+- **Modules**: All public APIs
+- **Key Tasks**:
+  - [ ] Document all public interfaces
+  - [ ] Add comprehensive docstrings
+  - [ ] Create API reference guide
+  - [ ] Add type hints throughout
+  - [ ] Generate API documentation
+
+#### 9.2 Usage Examples
+- **Directory**: `examples/`
+- **Key Tasks**:
+  - [ ] Basic training example
+  - [ ] Inference demonstration
+  - [ ] Custom dataset integration
+  - [ ] Fine-tuning tutorial
+  - [ ] Checkpoint manipulation guide
+
+#### 9.3 Tutorials
+- **Directory**: `docs/tutorials/`
+- **Key Tasks**:
+  - [ ] Getting started guide
+  - [ ] Understanding ACT mechanism
+  - [ ] Custom puzzle integration
+  - [ ] Performance optimization tips
+  - [ ] Migration from PyTorch guide
 
 ## Testing Strategy
 
@@ -360,28 +479,33 @@ def convert_pytorch_to_mlx(pytorch_path, mlx_path):
 - Days 3-4: RMSNorm implementation ✅ COMPLETE
 - Day 5: Testing and benchmarking ✅ COMPLETE
 
-### Week 2: Core Components
-- Days 1-2: SwiGLU activation
-- Days 3-4: Sparse embeddings and RoPE
-- Day 5: Integration testing
+### Week 2: Core Components ✅ COMPLETE
+- Days 1-2: SwiGLU activation ✅ COMPLETE
+- Days 3-4: Sparse embeddings and RoPE ✅ COMPLETE
+- Day 5: Integration testing ✅ COMPLETE
 
-### Week 3: Complex Modules
-- Days 1-3: Attention mechanism
-- Days 4-5: Initial ACT implementation
+### Week 3: Complex Modules ✅ COMPLETE
+- Days 1-3: Attention mechanism ✅ COMPLETE
+- Days 4-5: Initial ACT implementation ✅ COMPLETE
 
-### Week 4: Advanced Features
-- Days 1-3: Complete ACT mechanism
-- Days 4-5: HRM block integration
+### Week 4: Advanced Features ✅ COMPLETE
+- Days 1-3: Complete ACT mechanism ✅ COMPLETE
+- Days 4-5: Integration and testing ✅ COMPLETE
 
-### Week 5: Model Assembly
-- Days 1-2: Full model integration
-- Days 3-4: Training infrastructure
-- Day 5: Initial validation
+### Week 5: Model Integration & Loss Functions
+- Days 1-2: Complete model assembly (Phase 5.1)
+- Days 3: Configuration system (Phase 5.2)
+- Days 4-5: Loss functions & metrics (Phase 6)
 
-### Week 6: Validation and Optimization
-- Days 1-2: Comprehensive testing
-- Days 3-4: Performance optimization
-- Day 5: Documentation and release
+### Week 6: Training Infrastructure
+- Days 1-2: Optimizers and training loop (Phase 7.1-7.2)
+- Days 3: Data pipeline (Phase 7.3)
+- Days 4-5: Initial validation and testing (Phase 8)
+
+### Week 7: Validation & Documentation
+- Days 1-2: Complete validation suite (Phase 8)
+- Days 3-4: Documentation and examples (Phase 9)
+- Day 5: Final testing and release preparation
 
 ## Success Criteria
 
@@ -412,13 +536,21 @@ Each phase builds on the previous ones, creating a solid foundation for the comp
 ## Quick Reference
 
 ### Implementation Order
-1. **Initialization** ✅ → 2. **RMSNorm** ⏳ → 3. **SwiGLU** → 4. **Sparse Embeddings** → 5. **RoPE** → 6. **Attention** → 7. **ACT** → 8. **HRM Model** → 9. **Training**
+1. **Initialization** ✅ → 2. **RMSNorm** ✅ → 3. **SwiGLU** ✅ → 4. **Sparse Embeddings** ✅ → 5. **RoPE** ✅ → 6. **Attention** ✅ → 7. **ACT** ✅ → 8. **HRM Model** ⏳ → 9. **Loss Functions** → 10. **Training** → 11. **Validation** → 12. **Documentation**
 
 ### Key Dependencies
-- Attention needs: RoPE, RMSNorm
+- Attention needs: RoPE, RMSNorm, Custom initialization
 - ACT needs: All layers and attention
 - HRM Model needs: All components
-- Training needs: Complete model
+- Loss Functions need: Complete model
+- Training needs: Model + Losses + Optimizers
+- Validation needs: Training infrastructure
 
 ### Critical Path
-Initialization → RMSNorm → RoPE → Attention → ACT → Model Integration
+Initialization → RMSNorm → RoPE → Attention → ACT → Model Integration → Loss Functions → Training Infrastructure → Validation
+
+### Detailed Implementation Plans
+- **Phase 5**: `MLX_MODEL_INTEGRATION_PLAN.md`
+- **Phase 6**: `MLX_LOSS_FUNCTIONS_PLAN.md`
+- **Phase 7**: `MLX_TRAINING_INFRASTRUCTURE_PLAN.md`
+- **Phase 8**: `MLX_VALIDATION_PLAN.md`
