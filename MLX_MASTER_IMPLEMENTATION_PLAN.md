@@ -1,6 +1,6 @@
 # MLX HRM Master Implementation Plan
 
-## Progress Status: Phase 5 Complete (Model Integration) 
+## Progress Status: Phase 6 Complete (Loss Functions & Metrics) 
 **Last Updated**: 2025-08-03
 
 ### Phase Completion:
@@ -18,7 +18,11 @@
   - ✅ Configuration system with presets
   - ✅ Factory functions
   - ✅ Checkpoint management
-- ⏹️ **Phases 6-9**: Pending
+- ✅ **Phase 6**: Loss Functions & Metrics - COMPLETE
+  - ✅ Stablemax loss function
+  - ✅ ACT loss components
+  - ✅ Metrics tracking system
+- ⏹️ **Phases 7-9**: Pending
 
 ## Executive Summary
 
@@ -41,9 +45,10 @@ This master plan provides a comprehensive roadmap for implementing the Hierarchi
   - ✅ Configuration system
   - ✅ Factory functions
   - ✅ Checkpoint management
-- ⏳ **Phase 6**: Loss Functions & Metrics - READY TO START
-  - ⏹️ Stablemax loss (next)
-  - ⏹️ ACT loss components
+- ✅ **Phase 6**: Loss Functions & Metrics - COMPLETE
+  - ✅ Stablemax loss function
+  - ✅ ACT loss components  
+  - ✅ Metrics tracking system
 - ⏹️ **Phases 7-9**: Detailed plans created
 
 ## Table of Contents
@@ -310,31 +315,59 @@ MLX/  # Located at ~/Documents/MLX/
 - Integration tests verify all configuration methods
 - Created comprehensive usage examples in examples/basic_usage.py
 
-### Phase 6: Loss Functions & Metrics (Week 5)
+### Phase 6: Loss Functions & Metrics (Week 5) ✅ COMPLETED
 
 **Goal**: Implement HRM-specific loss functions and training metrics
 
-#### 6.1 Stablemax Loss
+#### 6.1 Stablemax Loss ✅
 - **Plan**: `MLX_LOSS_FUNCTIONS_PLAN.md`
 - **Module**: `src/mlx_hrm/training/losses.py`
 - **Dependencies**: None (standalone)
 - **Key Tasks**:
-  - [ ] Implement S-function for stablemax
-  - [ ] Create stablemax cross-entropy loss
-  - [ ] Add softmax baseline for comparison
-  - [ ] Test numerical stability
-  - [ ] Benchmark performance
+  - [x] Implement S-function for stablemax
+  - [x] Create stablemax cross-entropy loss
+  - [x] Add softmax baseline for comparison
+  - [x] Test numerical stability
+  - [x] Benchmark performance
 
-#### 6.2 ACT Loss Components
+**Completed Details**:
+- Exact port of HRM's novel stablemax loss function with S-function mapping
+- Both stablemax and softmax cross-entropy implementations with masking support
+- Comprehensive unit tests covering all edge cases and numerical stability
+- Verified gradient flow and performance characteristics
+
+#### 6.2 ACT Loss Components ✅
 - **Plan**: `MLX_LOSS_FUNCTIONS_PLAN.md`
 - **Module**: `src/mlx_hrm/training/act_loss.py`
 - **Dependencies**: Loss functions, HRM model
 - **Key Tasks**:
-  - [ ] Implement ACTLossHead wrapper
-  - [ ] Add language modeling loss
-  - [ ] Create Q-halt loss (binary cross-entropy)
-  - [ ] Implement Q-continue loss (TD learning)
-  - [ ] Track training metrics
+  - [x] Implement ACTLossHead wrapper
+  - [x] Add language modeling loss
+  - [x] Create Q-halt loss (binary cross-entropy)
+  - [x] Implement Q-continue loss (TD learning)
+  - [x] Track training metrics
+
+**Completed Details**:
+- Complete ACT loss head wrapper that combines language modeling, Q-halt, and Q-continue losses
+- Proper loss weighting (LM loss + 0.5 * Q-losses) as per original implementation
+- Comprehensive metrics tracking including accuracy, exact accuracy, and Q-halt accuracy
+- Full integration with MetricsTracker for training progress monitoring
+
+#### 6.3 Metrics Tracking ✅
+- **Plan**: `MLX_LOSS_FUNCTIONS_PLAN.md`
+- **Module**: `src/mlx_hrm/training/metrics.py`
+- **Dependencies**: None (standalone)
+- **Key Tasks**:
+  - [x] Implement MetricsTracker class
+  - [x] Add weighted averaging by count
+  - [x] Create epoch logging functionality
+  - [x] Support puzzle-specific metrics
+
+**Completed Details**:
+- Robust MetricsTracker with proper weighted averaging by sample count
+- Epoch-based logging with history preservation
+- Support for both aggregate metrics and per-puzzle breakdowns
+- Integration tests with ACT loss head for end-to-end validation
 
 ### Phase 7: Training Infrastructure (Week 5-6)
 

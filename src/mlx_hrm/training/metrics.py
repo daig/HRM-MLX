@@ -17,13 +17,13 @@ class MetricsTracker:
     """
     
     def __init__(self):
+        self.history = []
         self.reset()
     
     def reset(self):
-        """Reset all tracked metrics."""
+        """Reset current metrics (but preserve history)."""
         self.metrics_sum = {}
         self.metrics_count = {}
-        self.history = []
     
     def update(self, metrics: Dict[str, mx.array]):
         """
