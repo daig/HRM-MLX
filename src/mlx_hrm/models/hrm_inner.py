@@ -95,13 +95,20 @@ class HRMInner(nn.Module):
         self.q_head = LinearTruncNormal(
             config.hidden_size,
             2,
-            bias=False
+            bias=True,  # CRITICAL: Must have bias for proper ACT initialization
+            std=0.02
         )
         
-        # Learned initial states for resetting
+        # CRITICAL: Initialize Q-head bias to -5 to prefer continuation (matches PyTorch)
+        # This makes sigmoid output ~0.007, strongly preferring continuation initially
+        self.q_head.bias = mx.array([-5.0, -5.0])
+        
+        # Learned initial states for resetting (CRITICAL: Must be trainable parameters like PyTorch)
         # These are used when sequences halt and need to be reset
-        self.z_init_H = mx.zeros((1, 1, config.hidden_size))
-        self.z_init_L = mx.zeros((1, 1, config.hidden_size))
+        # PyTorch uses trunc_normal_init with std=1, we'll use truncated normal initialization
+        from ..layers.initialization import truncated_normal
+        self.z_init_H = truncated_normal((1, 1, config.hidden_size), std=1.0)
+        self.z_init_L = truncated_normal((1, 1, config.hidden_size), std=1.0)
     
     def embed_tokens(self, batch: Dict[str, mx.array]) -> mx.array:
         """
