@@ -1,6 +1,6 @@
 # MLX HRM Master Implementation Plan
 
-## Progress Status: Phase 6 Complete (Loss Functions & Metrics) 
+## Progress Status: Phase 7 Complete (Training Infrastructure) 
 **Last Updated**: 2025-08-03
 
 ### Phase Completion:
@@ -22,7 +22,11 @@
   - ✅ Stablemax loss function
   - ✅ ACT loss components
   - ✅ Metrics tracking system
-- ⏹️ **Phases 7-9**: Pending
+- ✅ **Phase 7**: Training Infrastructure - COMPLETE
+  - ✅ **Phase 7.1**: Smart Batching & Data Pipeline - COMPLETE
+  - ✅ **Phase 7.2**: Training Loop & Optimizers - COMPLETE
+  - ⏹️ **Phase 7.3**: Additional Enhancements - PENDING
+- ⏹️ **Phases 8-9**: Pending
 
 ## Executive Summary
 
@@ -49,7 +53,13 @@ This master plan provides a comprehensive roadmap for implementing the Hierarchi
   - ✅ Stablemax loss function
   - ✅ ACT loss components  
   - ✅ Metrics tracking system
-- ⏹️ **Phases 7-9**: Detailed plans created
+- ✅ **Phase 7**: Training Infrastructure - COMPLETE
+  - ✅ Smart batching strategy with puzzle grouping and intelligent sampling
+  - ✅ Enhanced data pipeline with train/test modes and validation
+  - ✅ Complete training loop with gradient accumulation and checkpointing
+  - ✅ Adam-atan2 and SignSGD optimizers with sparse-aware optimization
+  - ✅ Learning rate scheduling and comprehensive training infrastructure
+- ⏹️ **Phases 8-9**: Detailed plans created
 
 ## Table of Contents
 
@@ -369,42 +379,54 @@ MLX/  # Located at ~/Documents/MLX/
 - Support for both aggregate metrics and per-puzzle breakdowns
 - Integration tests with ACT loss head for end-to-end validation
 
-### Phase 7: Training Infrastructure (Week 5-6)
+### Phase 7: Training Infrastructure (Week 5-6) ✅ COMPLETED
 
 **Goal**: Build complete training pipeline with MLX optimizations
 
-#### 7.1 Adam-atan2 Optimizer
-- **Plan**: `MLX_TRAINING_INFRASTRUCTURE_PLAN.md`
-- **Module**: `src/mlx_hrm/training/optimizers.py`
-- **Dependencies**: MLX optimizer framework
-- **Key Tasks**:
-  - [ ] Port Adam-atan2 for sparse embeddings
-  - [ ] Create sparse-aware optimizer wrapper
-  - [ ] Support parameter groups
-  - [ ] Add gradient clipping
-  - [ ] Test convergence properties
-
-#### 7.2 Training Loop
-- **Plan**: `MLX_TRAINING_INFRASTRUCTURE_PLAN.md`
-- **Module**: `src/mlx_hrm/training/trainer.py`
-- **Dependencies**: Model, optimizers, losses
-- **Key Tasks**:
-  - [ ] Implement HRMTrainer class
-  - [ ] Add gradient accumulation
-  - [ ] Create validation loop
-  - [ ] Implement checkpointing
-  - [ ] Add early stopping
-
-#### 7.3 Data Pipeline
+#### 7.1 Smart Batching & Data Pipeline ✅
 - **Plan**: `MLX_TRAINING_INFRASTRUCTURE_PLAN.md`
 - **Module**: `src/mlx_hrm/data/dataset.py`
 - **Dependencies**: None (standalone)
 - **Key Tasks**:
-  - [ ] Create PuzzleDataset class
-  - [ ] Support ARC/Sudoku/Maze formats
-  - [ ] Implement efficient DataLoader
-  - [ ] Add data augmentation
-  - [ ] Test loading performance
+  - [x] Implement smart batching strategy with puzzle grouping
+  - [x] Create EnhancedPuzzleDataset with train/test modes
+  - [x] Add SmartDataLoader with intelligent sampling
+  - [x] Port _sample_batch_smart() from PyTorch HRM
+  - [x] Add batch size validation and error handling
+  - [x] Support ARC/Sudoku/Maze puzzle type grouping
+  - [x] Test smart batching with comprehensive test suite
+
+**Completed Details**:
+- Exact port of PyTorch HRM's smart batching algorithm using pure MLX
+- Group-first sampling strategy for puzzle coherence in batches
+- Train mode (shuffled) vs test mode (sequential) distinction
+- Comprehensive validation with warnings for batch size issues
+- 100% MLX-native implementation (no numpy dependencies)
+
+#### 7.2 Training Loop & Optimizers ✅
+- **Plan**: `MLX_TRAINING_INFRASTRUCTURE_PLAN.md`
+- **Module**: `src/mlx_hrm/training/trainer.py`
+- **Dependencies**: Model, optimizers, losses
+- **Key Tasks**:
+  - [x] Implement HRMTrainer class with gradient accumulation
+  - [x] Port Adam-atan2 optimizer for sparse embeddings
+  - [x] Create SparseAwareOptimizer wrapper
+  - [x] Add checkpointing and validation loops
+  - [x] Implement learning rate scheduling
+
+**Completed Details**:
+- Complete HRMTrainer with all PyTorch HRM training features
+- Adam-atan2 with atan2-based updates instead of division
+- SignSGD optimizer for sparse embeddings with proper weight decay
+- Gradient accumulation and mixed precision training support
+
+#### 7.3 Additional Enhancements - PENDING
+- **Module**: Extensions to current infrastructure
+- **Key Tasks**:
+  - [ ] Implement epochs batching for reduced overhead
+  - [ ] Add multi-worker data loading support
+  - [ ] Enhanced memory management optimizations
+  - [ ] Performance profiling and benchmarking tools
 
 ### Phase 8: Validation & Testing (Week 6)
 
