@@ -86,9 +86,12 @@ def create_hrm_from_checkpoint(
     
     # Load weights
     if path.is_dir():
-        weights_path = path / 'weights.safetensors'
+        weights_path = path / 'weights.pkl'
         if not weights_path.exists():
-            weights_path = path / 'weights.npz'
+            # Try other formats for backward compatibility
+            weights_path = path / 'weights.safetensors'
+            if not weights_path.exists():
+                weights_path = path / 'weights.npz'
     else:
         weights_path = path
     

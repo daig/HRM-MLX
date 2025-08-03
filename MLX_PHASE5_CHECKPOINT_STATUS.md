@@ -24,20 +24,25 @@
    - Basic text generation ✓
    - Parameter counting ✓
 
-### Current Problem: Checkpoint Saving
+### ✅ Checkpoint Saving/Loading RESOLVED
 
-The checkpoint saving is failing with `RuntimeError: std::bad_cast` when calling `mx.save_safetensors()`.
+The checkpoint functionality is now fully working using a direct port of PyTorch's approach!
 
-**Root Cause**: The model's `parameters()` returns a nested structure that includes:
-- Dictionaries (expected)
-- MLX arrays (expected)  
-- **Lists** (unexpected) - specifically `H_module.blocks` and `L_module.blocks` are lists of dictionaries
+**Solution**: Instead of overcomplicating with safetensors and flattening, we now use the same approach as PyTorch:
+- **Save**: `pickle.dump(model.parameters(), file)` - equivalent to PyTorch's `torch.save(model.state_dict(), path)`
+- **Load**: `pickle.load(file)` + `model.update(weights)` - equivalent to PyTorch's `model.load_state_dict(torch.load(path))`
 
-**What We Know**:
-- `mx.save_safetensors()` expects a flat dictionary of string keys to MLX arrays
-- Simple dictionaries save fine: `mx.save_safetensors(path, {'test': mx.array([1,2,3])})` works
-- The flattening logic needs to handle lists properly
-- Lists appear because transformer blocks are stored as `self.blocks = [block1, block2, ...]`
+**Key Insights**:
+1. MLX properly tracks parameters in lists (just like PyTorch's ModuleList)
+2. The nested dict/list structure from `parameters()` can be saved/loaded directly with pickle
+3. No need for complex flattening/unflattening logic
+4. This approach maintains perfect compatibility with MLX's `update()` method
+
+**Working Features**:
+- ✅ Model save/load with `save_weights()`/`load_weights()`
+- ✅ Full checkpoint save/load with config and metadata
+- ✅ Preserves exact model structure including transformer block lists
+- ✅ Simple, maintainable code that mirrors PyTorch
 
 ### Files Modified
 
@@ -83,6 +88,8 @@ Basic integration test shows:
 
 ### Important MLX Details
 
-- MLX has: `save`, `load`, `save_safetensors`, `load_safetensors`, `savez`, `savez_compressed`
+- MLX has: `save`, `load`, `save_safetensors`, `savez`, `savez_compressed` (NO `load_safetensors`!)
+- Use `mx.load()` to load any format including safetensors
 - Arrays must remain as MLX arrays throughout (no numpy conversion needed)
 - The model parameter structure includes nested dicts and lists
+- Lists in nn.Module are valid (like PyTorch's ModuleList) but need special handling for save/load

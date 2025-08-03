@@ -199,28 +199,11 @@ class HRM(nn.Module):
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Flatten parameters
-        flat_weights = {}
-        
-        def flatten_dict(d, prefix=''):
-            for k, v in d.items():
-                key = f"{prefix}.{k}" if prefix else k
-                if isinstance(v, dict):
-                    flatten_dict(v, key)
-                elif isinstance(v, list):
-                    # Handle lists (e.g., blocks)
-                    for i, item in enumerate(v):
-                        if isinstance(item, dict):
-                            flatten_dict(item, f"{key}.{i}")
-                        elif isinstance(item, mx.array):
-                            flat_weights[f"{key}.{i}"] = item
-                elif isinstance(v, mx.array):
-                    flat_weights[key] = v
-        
-        flatten_dict(self.parameters())
-        
-        # Save using MLX safetensors
-        mx.save_safetensors(str(path), flat_weights)
+        # Direct equivalent of PyTorch's torch.save(model.state_dict(), path)
+        # Just save the parameters dict directly
+        import pickle
+        with open(path, 'wb') as f:
+            pickle.dump(self.parameters(), f)
     
     def load_weights(self, path: str):
         """
@@ -231,23 +214,10 @@ class HRM(nn.Module):
         """
         path = Path(path)
         
-        # Load weights
-        if path.suffix == '.safetensors':
-            flat_weights = mx.load_safetensors(str(path))
-        else:
-            # Support loading from npz too
-            flat_weights = mx.load(str(path))
-        
-        # Convert to nested dict structure
-        weights = {}
-        for key, value in flat_weights.items():
-            parts = key.split('.')
-            current = weights
-            for part in parts[:-1]:
-                if part not in current:
-                    current[part] = {}
-                current = current[part]
-            current[parts[-1]] = value
+        # Direct equivalent of PyTorch's model.load_state_dict(torch.load(path))
+        import pickle
+        with open(path, 'rb') as f:
+            weights = pickle.load(f)
         
         # Update model parameters
         self.update(weights)

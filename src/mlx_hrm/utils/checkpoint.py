@@ -57,32 +57,13 @@ def save_checkpoint(
         with open(path / 'config.json', 'w') as f:
             json.dump(config_dict, f, indent=2)
     
-    # Save weights
-    weights = dict(model.parameters())
+    # Save weights - direct equivalent of PyTorch's approach
+    weights = model.parameters()
     
-    # Flatten nested parameter dictionaries
-    flat_weights = {}
-    
-    def flatten_dict(d: Dict, prefix: str = ''):
-        """Recursively flatten nested dictionary."""
-        for k, v in d.items():
-            key = f"{prefix}.{k}" if prefix else k
-            if isinstance(v, dict):
-                flatten_dict(v, key)
-            elif isinstance(v, list):
-                # Handle lists (e.g., blocks)
-                for i, item in enumerate(v):
-                    if isinstance(item, dict):
-                        flatten_dict(item, f"{key}.{i}")
-                    else:
-                        flat_weights[f"{key}.{i}"] = item
-            elif isinstance(v, mx.array):
-                flat_weights[key] = v
-            # Skip non-array values
-    
-    flatten_dict(weights)
-    # Save using MLX's safetensors format which supports dictionaries
-    mx.save_safetensors(str(path / 'weights.safetensors'), flat_weights)
+    # Use pickle like PyTorch does (torch.save uses pickle internally)
+    import pickle
+    with open(path / 'weights.pkl', 'wb') as f:
+        pickle.dump(weights, f)
     
     # Save metadata
     if metadata is None:
@@ -137,57 +118,19 @@ def load_checkpoint(path: str) -> Tuple[Dict[str, mx.array], HRMConfig, Dict[str
         config = HRMConfig(**config_dict)
     
     # Load weights
-    weights_path = path / 'weights.safetensors'
+    weights_path = path / 'weights.pkl'
     if not weights_path.exists():
-        # Try old numpy format for backward compatibility
-        weights_path = path / 'weights.npz'
+        # Try safetensors format for backward compatibility
+        weights_path = path / 'weights.safetensors'
         if not weights_path.exists():
             raise FileNotFoundError(f"No weights found at {path}")
+        # If safetensors exists, it's from old format - would need conversion
+        raise NotImplementedError("Loading from safetensors format not yet implemented. Please re-save checkpoint.")
     
-    # Load with MLX
-    if weights_path.suffix == '.safetensors':
-        flat_weights = mx.load_safetensors(str(weights_path))
-    else:
-        # Fallback to npz format
-        flat_weights = mx.load(str(weights_path))
-    
-    # Unflatten weights to nested structure
-    weights = {}
-    for key, value in flat_weights.items():
-        parts = key.split('.')
-        current = weights
-        for i, part in enumerate(parts[:-1]):
-            # Check if this part is a number (array index)
-            if part.isdigit():
-                # Convert parent dict to list if needed
-                parent_key = parts[i-1] if i > 0 else None
-                if parent_key and not isinstance(current, list):
-                    # We need to convert the parent to a list
-                    parent = weights
-                    for p in parts[:i-1]:
-                        parent = parent[p]
-                    parent[parts[i-1]] = []
-                    current = parent[parts[i-1]]
-                
-                # Extend list if needed
-                idx = int(part)
-                while len(current) <= idx:
-                    current.append({})
-                current = current[idx]
-            else:
-                if part not in current:
-                    current[part] = {}
-                current = current[part]
-        
-        # Set the value
-        final_key = parts[-1]
-        if final_key.isdigit() and isinstance(current, list):
-            idx = int(final_key)
-            while len(current) <= idx:
-                current.append(None)
-            current[idx] = value
-        else:
-            current[final_key] = value
+    # Load with pickle - direct equivalent of PyTorch
+    import pickle
+    with open(weights_path, 'rb') as f:
+        weights = pickle.load(f)
     
     # Load metadata
     metadata = {}
