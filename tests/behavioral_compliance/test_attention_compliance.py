@@ -183,7 +183,7 @@ class TestAttentionBasicEquivalence:
         k_t = k.transpose(0, 2, 1, 3)
         v_t = v.transpose(0, 2, 1, 3)
         
-        scale = 1.0 / math.sqrt(head_dim) 
+        scale = 1.0 / math.sqrt(config["head_dim"]) 
         output = mx.fast.scaled_dot_product_attention(q_t, k_t, v_t, scale=scale)
         
         # Check output statistics
@@ -236,7 +236,8 @@ class TestAttentionPrecisionHandling:
         mlx_fp32_promoted = mx.fast.scaled_dot_product_attention(
             q_t.astype(mx.float32), 
             k_t.astype(mx.float32), 
-            v_t.astype(mx.float32)
+            v_t.astype(mx.float32),
+            scale=scale
         ).astype(mx.bfloat16)
         
         # Check which approach gives more stable results
@@ -403,7 +404,8 @@ class TestCausalMaskEquivalence:
         v_t = v.transpose(0, 2, 1, 3)
         
         # MLX causal attention
-        mlx_causal = mx.fast.scaled_dot_product_attention(q_t, k_t, v_t, mask="causal")
+        scale = 1.0 / math.sqrt(head_dim)
+        mlx_causal = mx.fast.scaled_dot_product_attention(q_t, k_t, v_t, scale=scale, mask="causal")
         
         # Manual causal mask implementation
         scale = 1.0 / math.sqrt(head_dim)
@@ -441,7 +443,8 @@ class TestCausalMaskEquivalence:
         v = mx.random.normal((batch_size, num_heads, seq_len, head_dim))
         
         # Compute attention with causal mask
-        output = mx.fast.scaled_dot_product_attention(q, k, v, mask="causal")
+        scale = 1.0 / math.sqrt(head_dim)
+        output = mx.fast.scaled_dot_product_attention(q, k, v, scale=scale, mask="causal")
         
         # Manual computation to verify mask structure
         scale = 1.0 / math.sqrt(head_dim)
