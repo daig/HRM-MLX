@@ -176,6 +176,9 @@ class HRM_ACT(nn.Module):
             # Use sigmoid to convert to probability for stable training
             outputs["target_q_continue"] = mx.sigmoid(mx.stop_gradient(target_q))
         
+        # Add halted status to outputs
+        outputs["halted"] = halted
+        
         # Create new carry state
         new_carry = HRMCarry(
             inner_carry=new_inner_carry,

@@ -41,14 +41,12 @@ class HRMInner(nn.Module):
             # Sparse embeddings for puzzle-specific tokens
             self.sparse_tok_emb = CastedSparseEmbedding(
                 num_embeddings=config.num_puzzle_identifiers,
-                embedding_dim=config.puzzle_emb_ndim,
-                num_embeddings_per_sample=128,  # Fixed for HRM
-                init_scale=0.02
+                embedding_dim=config.hidden_size,  # Must match hidden_size for concatenation
+                batch_size=config.batch_size,
+                init_std=0.02
             )
-            total_emb_dim = config.puzzle_emb_ndim
         else:
             self.sparse_tok_emb = None
-            total_emb_dim = 0
         
         # Dense embeddings for vocabulary
         if config.vocab_size > 0:
@@ -57,19 +55,8 @@ class HRMInner(nn.Module):
                 embedding_dim=config.hidden_size,
                 std=0.02
             )
-            total_emb_dim += config.hidden_size
         else:
             self.dense_tok_emb = None
-        
-        # Project embeddings to hidden size if needed
-        if total_emb_dim != config.hidden_size:
-            self.emb_proj = LinearTruncNormal(
-                total_emb_dim,
-                config.hidden_size,
-                bias=False
-            )
-        else:
-            self.emb_proj = None
         
         # Position embeddings
         if config.pos_encodings == "rope":
@@ -150,10 +137,6 @@ class HRMInner(nn.Module):
         else:
             x = embeddings[0]
         
-        # Project to hidden size if needed
-        if self.emb_proj is not None:
-            x = self.emb_proj(x)
-        
         return x
     
     def reset_carry(self, halted: mx.array, carry: HRMInnerCarry) -> HRMInnerCarry:
@@ -221,7 +204,7 @@ class HRMInner(nn.Module):
         
         # Output projections
         # Use only the token positions (skip puzzle embedding if present)
-        if self.config.puzzle_emb_ndim > 0:
+        if self.config.puzzle_emb_ndim > 0 and batch.get("puzzle_ids") is not None:
             # Skip first position (puzzle embedding)
             output_positions = z_L[:, 1:]
         else:
