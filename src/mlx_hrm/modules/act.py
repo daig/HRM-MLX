@@ -14,6 +14,8 @@ from typing import Dict, Tuple, Optional, NamedTuple
 import mlx.core as mx
 import mlx.nn as nn
 
+from ..models.precision_config import MLXPrecisionConfig
+
 
 @dataclass
 class HRMInnerCarry:
@@ -207,6 +209,153 @@ class HRMReasoningModule(nn.Module):
             Processed tensor after all cycles
         """
         # Run multiple cycles through the same blocks (recurrent processing)
+        for _ in range(self.num_cycles):
+            for block in self.blocks:
+                x = block(cos_sin, x)
+        
+        return x
+
+
+class PrecisionAwareHRMBlock(nn.Module):
+    """
+    Precision-aware transformer block for HRM compliance.
+    
+    This version uses precision-aware components from Phase 1 to match
+    the original PyTorch HRM's manual mixed precision architecture exactly:
+    - Precision-aware attention with FP32 master weights
+    - Precision-aware SwiGLU with FP32 master weights
+    - Precision-aware RMSNorm with FP32 computation
+    - Forward computation in configured dtype (typically BF16)
+    
+    Implements a standard transformer block with:
+    - Multi-head self-attention (non-causal for bidirectional reasoning)
+    - SwiGLU MLP (more efficient than standard FFN)
+    - Post-normalization with precision-aware RMSNorm
+    - Residual connections
+    
+    Args:
+        config: HRM configuration
+        precision_config: Precision configuration (defaults to standard HRM config)
+    """
+    
+    def __init__(self, config: HRMConfig, precision_config: Optional[MLXPrecisionConfig] = None):
+        super().__init__()
+        
+        from ..modules.attention import PrecisionAwareAttention
+        from ..layers.activations import PrecisionAwareSwiGLU
+        
+        self.config = config
+        self.norm_eps = config.rms_norm_eps
+        
+        # Use standard HRM precision config if none provided
+        self.precision_config = precision_config or MLXPrecisionConfig.create_herm_standard_config()
+        
+        # Precision-aware non-causal attention for bidirectional reasoning
+        self.self_attn = PrecisionAwareAttention(
+            hidden_size=config.hidden_size,
+            head_dim=config.head_dim,
+            num_heads=config.num_heads,
+            num_key_value_heads=config.num_heads,
+            causal=False,
+            precision_config=self.precision_config
+        )
+        
+        # Precision-aware SwiGLU MLP
+        self.mlp = PrecisionAwareSwiGLU(
+            hidden_size=config.hidden_size,
+            expansion=config.expansion,
+            precision_config=self.precision_config
+        )
+    
+    def __call__(self, cos_sin: Optional[Tuple[mx.array, mx.array]], x: mx.array) -> mx.array:
+        """
+        Forward pass through precision-aware transformer block.
+        
+        Args:
+            cos_sin: RoPE embeddings (cos, sin) or None
+            x: Input tensor [batch_size, seq_len, hidden_size]
+            
+        Returns:
+            Output tensor with same shape as input
+        """
+        from ..layers.precision import precision_aware_rms_norm
+        
+        # Ensure input is in forward dtype
+        forward_dtype = self.precision_config.get_forward_dtype()
+        x = x.astype(forward_dtype)
+        
+        # Self-attention with residual and precision-aware normalization
+        # precision_aware_rms_norm computes in FP32 internally for stability
+        x = precision_aware_rms_norm(x + self.self_attn(cos_sin, x), eps=self.norm_eps)
+        
+        # MLP with residual and precision-aware normalization
+        x = precision_aware_rms_norm(x + self.mlp(x), eps=self.norm_eps)
+        
+        return x
+
+
+class PrecisionAwareHRMReasoningModule(nn.Module):
+    """
+    Precision-aware reasoning module for HRM compliance.
+    
+    This version uses precision-aware transformer blocks to match the original
+    PyTorch HRM's manual mixed precision architecture exactly.
+    
+    Each module consists of:
+    - Multiple precision-aware transformer blocks (layers)
+    - Multiple processing cycles through the layers
+    - Shared weights across cycles (recurrent processing)
+    - All computation in configured precision (FP32 master weights, BF16 forward)
+    
+    Args:
+        config: HRM configuration
+        num_layers: Number of transformer layers
+        num_cycles: Number of processing cycles
+        precision_config: Precision configuration (defaults to standard HRM config)
+    """
+    
+    def __init__(
+        self, 
+        config: HRMConfig, 
+        num_layers: int, 
+        num_cycles: int,
+        precision_config: Optional[MLXPrecisionConfig] = None
+    ):
+        super().__init__()
+        
+        self.config = config
+        self.num_cycles = num_cycles
+        
+        # Use standard HRM precision config if none provided
+        self.precision_config = precision_config or MLXPrecisionConfig.create_herm_standard_config()
+        
+        # Stack of precision-aware transformer blocks
+        self.blocks = [
+            PrecisionAwareHRMBlock(config, self.precision_config) 
+            for _ in range(num_layers)
+        ]
+    
+    def __call__(
+        self, 
+        cos_sin: Optional[Tuple[mx.array, mx.array]], 
+        x: mx.array
+    ) -> mx.array:
+        """
+        Process input through multiple cycles of precision-aware transformer blocks.
+        
+        Args:
+            cos_sin: RoPE embeddings or None
+            x: Input tensor
+            
+        Returns:
+            Processed tensor after all cycles
+        """
+        # Ensure input is in forward dtype
+        forward_dtype = self.precision_config.get_forward_dtype()
+        x = x.astype(forward_dtype)
+        
+        # Run multiple cycles through the same blocks (recurrent processing)
+        # All computation happens in forward dtype with FP32 master weights
         for _ in range(self.num_cycles):
             for block in self.blocks:
                 x = block(cos_sin, x)

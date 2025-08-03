@@ -18,6 +18,8 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from ..layers.initialization import LinearTruncNormal
+from ..layers.precision import MLXCastedLinear
+from ..models.precision_config import MLXPrecisionConfig
 
 
 def repeat_kv(x: mx.array, n_rep: int) -> mx.array:
@@ -185,3 +187,161 @@ class Attention(nn.Module):
         return (f"Attention: hidden_size={self.hidden_size}, "
                 f"num_heads={self.num_heads}, num_kv_heads={self.num_key_value_heads}"
                 f"{gqa_info}{causal_info}")
+
+
+class PrecisionAwareAttention(nn.Module):
+    """
+    Multi-head attention with HRM-compliant precision handling.
+    
+    This version uses the precision-aware components from Phase 1 to match
+    the original PyTorch HRM's manual mixed precision architecture exactly:
+    - FP32 master weights for stability
+    - Forward computation in configured dtype (typically BF16)
+    - Dynamic casting for optimal performance
+    
+    Supports all the same features as the base Attention class:
+    - Multi-head attention (MHA) when num_heads == num_key_value_heads
+    - Grouped-query attention (GQA) when num_key_value_heads < num_heads
+    - Both causal and non-causal attention
+    - Integration with RoPE for position encoding
+    
+    Args:
+        hidden_size: Model hidden dimension
+        head_dim: Dimension of each attention head
+        num_heads: Number of query heads
+        num_key_value_heads: Number of key/value heads (for GQA)
+        causal: Whether to use causal masking
+        precision_config: Precision configuration (defaults to standard HRM config)
+    """
+    
+    def __init__(
+        self,
+        hidden_size: int,
+        head_dim: int,
+        num_heads: int,
+        num_key_value_heads: int,
+        causal: bool = False,
+        precision_config: Optional[MLXPrecisionConfig] = None
+    ):
+        super().__init__()
+        
+        self.hidden_size = hidden_size
+        self.head_dim = head_dim
+        self.num_heads = num_heads
+        self.num_key_value_heads = num_key_value_heads
+        self.causal = causal
+        self.output_size = head_dim * num_heads
+        
+        # Use standard HRM precision config if none provided
+        self.precision_config = precision_config or MLXPrecisionConfig.create_herm_standard_config()
+        
+        # Ensure head dimensions are valid
+        assert self.output_size == self.head_dim * self.num_heads, \
+            f"output_size ({self.output_size}) != head_dim ({self.head_dim}) * num_heads ({self.num_heads})"
+        
+        # Check GQA configuration
+        assert self.num_heads % self.num_key_value_heads == 0, \
+            f"num_heads ({self.num_heads}) must be divisible by num_key_value_heads ({self.num_key_value_heads})"
+        
+        self.n_rep = self.num_heads // self.num_key_value_heads
+        
+        # Precision-aware QKV projection with FP32 master weights
+        # Output size = Q_size + K_size + V_size
+        self.qkv_proj = MLXCastedLinear(
+            input_dims=self.hidden_size,
+            output_dims=(self.num_heads + 2 * self.num_key_value_heads) * self.head_dim,
+            bias=False
+        )
+        
+        # Precision-aware output projection with FP32 master weights
+        self.o_proj = MLXCastedLinear(
+            input_dims=self.output_size,
+            output_dims=self.hidden_size,
+            bias=False
+        )
+    
+    def __call__(
+        self,
+        cos_sin: Optional[Tuple[mx.array, mx.array]],
+        hidden_states: mx.array
+    ) -> mx.array:
+        """
+        Forward pass through precision-aware attention layer.
+        
+        Args:
+            cos_sin: Precomputed RoPE values (cos, sin) or None
+            hidden_states: Input tensor [batch_size, seq_len, hidden_size]
+            
+        Returns:
+            Attention output [batch_size, seq_len, hidden_size]
+        """
+        batch_size, seq_len, _ = hidden_states.shape
+        
+        # Ensure computation happens in forward dtype (typically BF16)
+        forward_dtype = self.precision_config.get_forward_dtype()
+        hidden_states = hidden_states.astype(forward_dtype)
+        
+        # Project to Q, K, V using precision-aware linear layer
+        # MLXCastedLinear automatically casts FP32 master weights to forward dtype
+        qkv = self.qkv_proj(hidden_states)
+        
+        # Reshape to separate heads
+        # Shape: [batch_size, seq_len, num_heads + 2*num_kv_heads, head_dim]
+        qkv = qkv.reshape(
+            batch_size, seq_len,
+            self.num_heads + 2 * self.num_key_value_heads,
+            self.head_dim
+        )
+        
+        # Split into Q, K, V
+        # For GQA: K and V have fewer heads than Q
+        query = qkv[:, :, :self.num_heads]
+        key = qkv[:, :, self.num_heads:self.num_heads + self.num_key_value_heads]
+        value = qkv[:, :, self.num_heads + self.num_key_value_heads:]
+        
+        # Apply RoPE if position encodings are provided
+        if cos_sin is not None:
+            from .rope import apply_rotary_pos_emb
+            cos, sin = cos_sin
+            query, key = apply_rotary_pos_emb(query, key, cos, sin)
+        
+        # Repeat KV heads if using GQA
+        if self.n_rep > 1:
+            key = repeat_kv(key, self.n_rep)
+            value = repeat_kv(value, self.n_rep)
+        
+        # Transpose for attention: [B, N_heads, Seq_len, Head_dim]
+        # MLX's scaled_dot_product_attention expects this format
+        query = query.transpose(0, 2, 1, 3)
+        key = key.transpose(0, 2, 1, 3)
+        value = value.transpose(0, 2, 1, 3)
+        
+        # Compute scaled dot product attention in forward dtype
+        # Scale factor is 1/sqrt(head_dim)
+        scale = 1.0 / math.sqrt(self.head_dim)
+        
+        # MLX's fast attention with proper masking
+        attn_output = mx.fast.scaled_dot_product_attention(
+            query, key, value,
+            scale=scale,
+            mask="causal" if self.causal else None
+        )
+        
+        # Transpose back and reshape
+        # From [B, N_heads, Seq_len, Head_dim] to [B, Seq_len, N_heads, Head_dim]
+        attn_output = attn_output.transpose(0, 2, 1, 3)
+        
+        # Flatten heads: [B, Seq_len, N_heads * Head_dim]
+        attn_output = attn_output.reshape(batch_size, seq_len, self.output_size)
+        
+        # Final output projection using precision-aware linear layer
+        return self.o_proj(attn_output)
+    
+    def shape_info(self) -> str:
+        """Return string describing the precision-aware attention configuration."""
+        gqa_info = f" (GQA {self.n_rep}:1)" if self.n_rep > 1 else ""
+        causal_info = " (causal)" if self.causal else ""
+        precision_info = f" (forward: {self.precision_config.forward_dtype}, master: {self.precision_config.master_weights_dtype})"
+        return (f"PrecisionAwareAttention: hidden_size={self.hidden_size}, "
+                f"num_heads={self.num_heads}, num_kv_heads={self.num_key_value_heads}"
+                f"{gqa_info}{causal_info}{precision_info}")

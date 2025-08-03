@@ -18,6 +18,7 @@ import mlx.nn as nn
 from dataclasses import dataclass
 
 from .initialization import EmbeddingTruncNormal
+from ..models.precision_config import MLXPrecisionConfig
 
 
 class CastedSparseEmbedding(nn.Module):
@@ -279,6 +280,272 @@ def create_sparse_embedding_optimizer(
     sparse_params = []
     for name, module in model.named_modules():
         if isinstance(module, CastedSparseEmbedding):
+            # We track the local weights for gradient computation
+            # The actual weight update happens through the optimizer
+            if module._local_weights is not None:
+                sparse_params.append(module._local_weights)
+    
+    return optimizer, sparse_params
+
+
+class PrecisionAwareSparseEmbedding(nn.Module):
+    """Precision-aware sparse embedding layer for HRM compliance.
+    
+    This version integrates with the HRM precision configuration system to match
+    the original PyTorch HRM's manual mixed precision architecture exactly:
+    - FP32 master embeddings for gradient stability
+    - Forward computation in configured dtype (typically BF16)
+    - Automatic casting for optimal performance
+    
+    The sparse embedding approach allows scaling to thousands of puzzle types
+    while maintaining memory efficiency by only activating embeddings for
+    puzzles in the current batch.
+    
+    Key features:
+    - Master embeddings stored in FP32 (configured master_weights_dtype)
+    - Output cast to forward_dtype for computation
+    - Sparse gradient updates for efficiency
+    - Integration with precision configuration system
+    
+    Args:
+        num_embeddings: Size of the embedding vocabulary
+        embedding_dim: Dimension of each embedding vector
+        batch_size: Maximum batch size (for local workspace allocation)
+        init_std: Standard deviation for weight initialization
+        precision_config: Precision configuration (defaults to standard HRM config)
+    """
+    
+    def __init__(
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        batch_size: int,
+        init_std: float = 0.02,
+        precision_config: Optional[MLXPrecisionConfig] = None
+    ):
+        """Initialize precision-aware sparse embedding layer."""
+        super().__init__()
+        
+        # Use standard HRM precision config if none provided
+        self.precision_config = precision_config or MLXPrecisionConfig.create_herm_standard_config()
+        
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.batch_size = batch_size
+        
+        # Master embeddings: Always stored in FP32 for gradient stability
+        # This matches the original HRM's precision architecture
+        master_dtype = self.precision_config.get_embedding_dtype()  # Should be FP32
+        
+        # Use custom embedding layer with truncated normal initialization
+        # Force master dtype to be FP32 regardless of config for stability
+        self._embedding = EmbeddingTruncNormal(
+            num_embeddings=num_embeddings,
+            embedding_dim=embedding_dim,
+            std=init_std
+        )
+        
+        # Ensure master weights are FP32 (override if needed)
+        if self._embedding.weight.dtype != mx.float32:
+            self._embedding.weight = self._embedding.weight.astype(mx.float32)
+        
+        # For compatibility with SignSGD optimizer
+        # Store reference to master weights
+        self._weights = self._embedding.weight
+        
+        # Local workspace for current batch (only used during training)
+        # These will be populated during forward pass
+        self._local_weights: Optional[mx.array] = None
+        self._local_ids: Optional[mx.array] = None
+        
+    @property
+    def weight(self) -> mx.array:
+        """Access to the master embedding table (always FP32)."""
+        return self._weights
+    
+    def __call__(self, inputs: mx.array, cast_to: Optional[mx.Dtype] = None) -> mx.array:
+        """Look up embeddings for the given puzzle IDs with precision handling.
+        
+        Args:
+            inputs: Puzzle identifiers [batch_size]
+            cast_to: Optional target dtype override (defaults to forward_dtype)
+            
+        Returns:
+            Embeddings for the puzzles [batch_size, embedding_dim]
+        """
+        # Determine target dtype
+        if cast_to is not None:
+            target_dtype = cast_to
+        else:
+            target_dtype = self.precision_config.get_forward_dtype()
+        
+        # During training, we need to track which embeddings are used
+        # for sparse gradient updates
+        if self.training:
+            # Store the IDs for later use by the optimizer
+            self._local_ids = inputs
+            
+            # Get embeddings for current batch (always FP32 from master)
+            embeddings = self._embedding(inputs)
+            
+            # Store local copy for gradient computation
+            # In MLX, we don't need explicit gradient tracking like PyTorch
+            self._local_weights = embeddings
+            
+            # Cast to target dtype for forward computation
+            if target_dtype != embeddings.dtype:
+                embeddings = embeddings.astype(target_dtype)
+                
+            return embeddings
+        else:
+            # Inference mode: Direct lookup with casting
+            embeddings = self._embedding(inputs)
+            
+            # Cast to target dtype for forward computation
+            if target_dtype != embeddings.dtype:
+                embeddings = embeddings.astype(target_dtype)
+                
+            return embeddings
+    
+    def get_sparse_gradients(self) -> Tuple[mx.array, mx.array]:
+        """Get the IDs and gradients for sparse update.
+        
+        Returns:
+            Tuple of (embedding_ids, gradients) for the current batch
+        """
+        if self._local_ids is None:
+            raise ValueError("No forward pass has been performed yet")
+        
+        return self._local_ids, self._local_weights
+    
+    def precision_info(self) -> str:
+        """Return string describing the precision configuration."""
+        return (f"PrecisionAwareSparseEmbedding: num_embeddings={self.num_embeddings}, "
+                f"embedding_dim={self.embedding_dim}, "
+                f"master: {self.precision_config.master_weights_dtype}, "
+                f"forward: {self.precision_config.forward_dtype}")
+
+
+class PrecisionAwareSignSGD:
+    """Precision-aware Sign-based SGD optimizer for sparse embeddings.
+    
+    This version integrates with the precision configuration system to ensure
+    gradient updates happen with the correct precision for stability.
+    
+    Sign-SGD is particularly effective for sparse embeddings because:
+    1. It's robust to gradient magnitude variations
+    2. Updates are ±1 * learning_rate, providing consistent updates
+    3. Works well with sparse gradients (most embeddings have zero gradient)
+    4. Precision-aware updates maintain FP32 master weights
+    
+    Args:
+        learning_rate: Learning rate for updates
+        weight_decay: L2 regularization strength
+        precision_config: Precision configuration for gradient handling
+    """
+    
+    def __init__(
+        self,
+        learning_rate: Union[float, mx.array] = 1e-3,
+        weight_decay: float = 1e-2,
+        precision_config: Optional[MLXPrecisionConfig] = None
+    ):
+        """Initialize precision-aware SignSGD optimizer."""
+        if isinstance(learning_rate, float):
+            self._learning_rate = mx.array(learning_rate)
+        else:
+            self._learning_rate = learning_rate
+            
+        self.weight_decay = weight_decay
+        self.precision_config = precision_config or MLXPrecisionConfig.create_herm_standard_config()
+        self.state: Dict[int, SignSGDState] = {}
+    
+    def update_sparse_embedding(
+        self,
+        embedding: PrecisionAwareSparseEmbedding,
+        gradients: mx.array,
+        embedding_ids: mx.array
+    ) -> None:
+        """Update sparse embeddings using precision-aware SignSGD.
+        
+        Args:
+            embedding: The precision-aware sparse embedding layer to update
+            gradients: Gradients for embeddings in the current batch
+            embedding_ids: IDs of embeddings that have gradients
+        """
+        # Get or create state
+        param_id = id(embedding)
+        if param_id not in self.state:
+            self.state[param_id] = SignSGDState()
+        
+        state = self.state[param_id]
+        state.step += 1
+        
+        # Ensure gradients are in the correct precision for stable updates
+        gradient_dtype = self.precision_config.get_gradient_dtype()  # Should be FP32
+        if gradients.dtype != gradient_dtype:
+            gradients = gradients.astype(gradient_dtype)
+        
+        # Get current weights for the embeddings that have gradients
+        # Master weights are always FP32
+        current_weights = embedding.weight[embedding_ids]
+        
+        # Apply weight decay in FP32 for stability
+        if self.weight_decay > 0:
+            current_weights = current_weights * (1.0 - self._learning_rate * self.weight_decay)
+        
+        # Apply sign-based gradient update in FP32
+        updates = current_weights - self._learning_rate * mx.sign(gradients)
+        
+        # Update only the used embeddings in the master table
+        # Master weights stay in FP32
+        new_weights = mx.array(embedding.weight)  # Create a copy
+        for i, idx in enumerate(embedding_ids.tolist()):
+            new_weights[idx] = updates[i]
+        
+        # Update the embedding weights (keep FP32 master weights)
+        embedding._weights = new_weights
+        embedding._embedding.weight = new_weights
+    
+    def precision_info(self) -> str:
+        """Return string describing the precision configuration."""
+        return (f"PrecisionAwareSignSGD: lr={self._learning_rate.item():.6f}, "
+                f"wd={self.weight_decay:.6f}, "
+                f"gradient: {self.precision_config.gradient_dtype}")
+
+
+def create_precision_aware_sparse_embedding_optimizer(
+    model: nn.Module,
+    learning_rate: float = 1e-3,
+    weight_decay: float = 1e-2,
+    precision_config: Optional[MLXPrecisionConfig] = None
+) -> Tuple[PrecisionAwareSignSGD, List[mx.array]]:
+    """Create precision-aware SignSGD optimizer for sparse embeddings.
+    
+    This helper function:
+    1. Creates a precision-aware SignSGD optimizer
+    2. Finds all precision-aware sparse embedding parameters
+    3. Returns optimizer and list of parameters to track
+    
+    Args:
+        model: The model containing precision-aware sparse embeddings
+        learning_rate: Learning rate for SignSGD
+        weight_decay: L2 regularization strength
+        precision_config: Precision configuration
+        
+    Returns:
+        Tuple of (optimizer, sparse_parameters)
+    """
+    optimizer = PrecisionAwareSignSGD(
+        learning_rate=learning_rate, 
+        weight_decay=weight_decay,
+        precision_config=precision_config
+    )
+    
+    # Find all precision-aware sparse embedding parameters
+    sparse_params = []
+    for name, module in model.named_modules():
+        if isinstance(module, PrecisionAwareSparseEmbedding):
             # We track the local weights for gradient computation
             # The actual weight update happens through the optimizer
             if module._local_weights is not None:
