@@ -9,6 +9,9 @@ import random
 # Import IGNORE_LABEL_ID from training losses
 from ..training.losses import IGNORE_LABEL_ID
 
+# Import memory management utilities
+from .memory_utils import MemoryMonitor, LazyArrayLoader, BatchMemoryOptimizer, optimize_mlx_memory_usage
+
 
 class PuzzleDatasetMetadata:
     """Metadata for puzzle datasets."""
@@ -225,7 +228,9 @@ class EnhancedPuzzleDataset:
         split: str = "train",
         max_seq_len: int = 512,
         seed: int = 42,
-        mode: str = "train"  # "train" or "test"
+        mode: str = "train",  # "train" or "test"
+        enable_memory_optimization: bool = True,
+        memory_cache_size_mb: int = 512
     ):
         """
         Initialize enhanced puzzle dataset.
@@ -236,12 +241,27 @@ class EnhancedPuzzleDataset:
             max_seq_len: Maximum sequence length
             seed: Random seed for reproducibility
             mode: Iteration mode ("train" for shuffled, "test" for sequential)
+            enable_memory_optimization: Enable memory management features
+            memory_cache_size_mb: Cache size for lazy loading (MB)
         """
         self.data_path = Path(data_path)
         self.split = split
         self.max_seq_len = max_seq_len
         self.seed = seed
         self.mode = mode
+        self.enable_memory_optimization = enable_memory_optimization
+        
+        # Initialize memory management components
+        if enable_memory_optimization:
+            self.memory_monitor = MemoryMonitor()
+            self.lazy_loader = LazyArrayLoader(self.data_path, memory_cache_size_mb)
+            self.batch_optimizer = BatchMemoryOptimizer()
+            # Apply global memory optimizations
+            optimize_mlx_memory_usage()
+        else:
+            self.memory_monitor = None
+            self.lazy_loader = None
+            self.batch_optimizer = None
         
         # Set random seed
         random.seed(seed)
@@ -258,6 +278,11 @@ class EnhancedPuzzleDataset:
         
         print(f"Loaded {self.num_examples} examples from {self.data_path}")
         print(f"Smart batching: {len(self.puzzle_indices)-1} puzzles, {len(self.group_indices)-1} groups")
+        
+        # Log memory status
+        if self.memory_monitor:
+            stats = self.memory_monitor.log_memory_usage("dataset_loaded")
+            print(f"Memory usage: {stats['rss_mb']:.1f}MB")
     
     def _init_smart_batching(self):
         """Initialize puzzle and group indices for smart batching."""
@@ -613,6 +638,37 @@ class EnhancedPuzzleDataset:
             batch_size=batch_size,
             epochs_per_iter=epochs_per_iter
         )
+    
+    def optimize_memory_usage(self):
+        """Apply memory optimizations to the dataset."""
+        if self.enable_memory_optimization:
+            optimize_mlx_memory_usage()
+            if self.lazy_loader:
+                self.lazy_loader.clear_cache()
+            print("Memory optimization applied")
+    
+    def get_memory_stats(self) -> Dict[str, Any]:
+        """Get comprehensive memory statistics."""
+        if not self.memory_monitor:
+            return {"memory_optimization": "disabled"}
+        
+        stats = {
+            "memory_optimization": "enabled",
+            "monitor_stats": self.memory_monitor.get_summary(),
+        }
+        
+        if self.lazy_loader:
+            stats["cache_stats"] = self.lazy_loader.get_cache_stats()
+        
+        if self.batch_optimizer:
+            stats["batch_recommendation"] = self.batch_optimizer.get_optimal_batch_size_recommendation()
+        
+        return stats
+    
+    def estimate_memory_requirements(self) -> Dict[str, float]:
+        """Estimate memory requirements for this dataset."""
+        from .memory_utils import estimate_dataset_memory_requirements
+        return estimate_dataset_memory_requirements(self.data_path)
 
 
 class SmartDataLoader:
@@ -702,18 +758,36 @@ class SmartDataLoader:
         # Epoch should already be started by start_new_epoch() or __iter__()
         
         while self.sampler.has_batches_remaining():
+            # Memory monitoring - batch start
+            if self.dataset.memory_monitor:
+                self.dataset.memory_monitor.on_batch_start()
+            
             batch_result = self.sampler.sample_batch()
             if batch_result is None:
                 break
             
             example_indices, puzzle_ids = batch_result
             
-            # Use MLX array indexing for efficiency
-            batch = {
-                'input_ids': self.dataset.input_ids[example_indices],
-                'labels': self.dataset.labels[example_indices],
-                'puzzle_id': self.dataset.puzzle_ids[example_indices]
-            }
+            # Use MLX array indexing for efficiency with memory optimization
+            if self.dataset.batch_optimizer:
+                # Use memory-optimized batch creation
+                data_arrays = {
+                    'input_ids': self.dataset.input_ids,
+                    'labels': self.dataset.labels,
+                    'puzzle_id': self.dataset.puzzle_ids
+                }
+                batch = self.dataset.batch_optimizer.create_efficient_batch(example_indices, data_arrays)
+            else:
+                # Standard batch creation
+                batch = {
+                    'input_ids': self.dataset.input_ids[example_indices],
+                    'labels': self.dataset.labels[example_indices],
+                    'puzzle_id': self.dataset.puzzle_ids[example_indices]
+                }
+            
+            # Memory monitoring - batch end
+            if self.dataset.memory_monitor:
+                self.dataset.memory_monitor.on_batch_end()
             
             yield batch
     
