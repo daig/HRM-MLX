@@ -151,20 +151,30 @@ class SmartBatchSampler:
         self.rng = random.Random(seed)
     
     def _create_group_order(self, epochs_per_iter: int = 1) -> mx.array:
-        """Create shuffled order of groups for multiple epochs."""
+        """Create shuffled order of groups for multiple epochs.
+        
+        Fixed to generate enough group repetitions to cover entire dataset,
+        following the PyTorch HRM reference implementation.
+        """
         num_groups = self.group_indices.shape[0] - 1
         
+        # Calculate how many group cycles needed for full dataset coverage
+        # This ensures we can process the entire dataset, not just a few groups
+        total_examples = int(self.puzzle_indices[-1].item()) - int(self.puzzle_indices[0].item())
+        approx_batches_needed = (total_examples + self.batch_size - 1) // self.batch_size
+        cycles_needed = max(epochs_per_iter, (approx_batches_needed + num_groups - 1) // num_groups)
+        
         if self.shuffle_groups:
-            # Create shuffled order for each epoch
+            # Create shuffled order for each epoch, with enough cycles for full coverage
             group_orders = []
-            for _ in range(epochs_per_iter):
+            for _ in range(cycles_needed):
                 order = list(range(num_groups))
                 self.rng.shuffle(order)
                 group_orders.extend(order)
             return mx.array(group_orders)
         else:
-            # Sequential order
-            return mx.array(list(range(num_groups)) * epochs_per_iter)
+            # Sequential order with enough repetitions
+            return mx.array(list(range(num_groups)) * cycles_needed)
     
     def start_epoch(self, epochs_per_iter: int = 1):
         """Start a new epoch with fresh group ordering."""
@@ -200,8 +210,9 @@ class SmartBatchSampler:
         # Update state
         self.start_index = new_start_index
         
-        # Skip incomplete batches for training stability
-        if len(example_indices) < self.batch_size:
+        # Only skip completely empty batches - allow incomplete batches for better data utilization
+        # This fixes the critical data underutilization issue mentioned in BUG_REPORT_SMART_BATCHING.md
+        if len(example_indices) == 0:
             return None
         
         return example_indices, puzzle_ids
