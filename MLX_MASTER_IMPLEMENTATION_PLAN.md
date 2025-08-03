@@ -1,6 +1,6 @@
 # MLX HRM Master Implementation Plan
 
-## Progress Status: Phase 3.1 Complete (Attention) 
+## Progress Status: Phase 4.1 Complete (ACT) 
 **Last Updated**: 2025-08-03
 
 ### Phase Completion:
@@ -9,9 +9,11 @@
   - ✅ SwiGLU Activation
   - ✅ Sparse Embeddings
   - ✅ Rotary Position Embeddings (RoPE)
-- ⏳ **Phase 3**: Complex Modules - IN PROGRESS
+- ✅ **Phase 3**: Complex Modules - COMPLETE
   - ✅ Multi-Head Attention with GQA support
-- ⏹️ **Phases 4-9**: Pending
+- ✅ **Phase 4**: Advanced Features - COMPLETE
+  - ✅ Adaptive Computation Time (ACT) mechanism
+- ⏹️ **Phases 5-9**: Pending
 
 ## Executive Summary
 
@@ -230,16 +232,27 @@ MLX/  # Located at ~/Documents/MLX/
 
 **Goal**: Implement the hierarchical reasoning mechanisms
 
-#### 4.1 Adaptive Computation Time (ACT)
+#### 4.1 Adaptive Computation Time (ACT) ✅
 - **Plan**: `MLX_ACT_MECHANISM_IMPLEMENTATION_PLAN.md`
-- **Module**: `src/mlx_hrm/modules/act.py`
+- **Modules**: 
+  - `src/mlx_hrm/modules/act.py` - Carry states and base components
+  - `src/mlx_hrm/models/hrm_inner.py` - Inner HRM model
+  - `src/mlx_hrm/models/hrm_act.py` - ACT wrapper
 - **Dependencies**: All previous components
 - **Key Tasks**:
-  - [ ] Implement ACT controller
-  - [ ] Build high-level and low-level modules
-  - [ ] Create differentiable halting mechanism
-  - [ ] Test adaptive computation behavior
-  - [ ] Optimize for dynamic computation graphs
+  - [x] Implement ACT controller
+  - [x] Build high-level and low-level modules
+  - [x] Create differentiable halting mechanism
+  - [x] Test adaptive computation behavior
+  - [x] Optimize for dynamic computation graphs
+
+**Completed Details**:
+- Implemented complete ACT mechanism with Q-learning based halting
+- Created hierarchical H-level (planning) and L-level (computation) modules
+- Carry state management for maintaining context between ACT steps
+- Dynamic halting with exploration during training
+- 14 comprehensive unit tests covering all functionality
+- Full integration with existing components (Attention, RoPE, SwiGLU)
 
 ### Phase 5: Model Integration (Week 4-5)
 

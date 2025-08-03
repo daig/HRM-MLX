@@ -9,11 +9,23 @@ from .rope import (
     CosSin
 )
 from .attention import Attention
+from .act import (
+    HRMInnerCarry,
+    HRMCarry,
+    HRMConfig,
+    HRMBlock,
+    HRMReasoningModule
+)
 
 __all__ = [
     "RotaryEmbedding",
     "rotate_half", 
     "apply_rotary_pos_emb",
     "CosSin",
-    "Attention"
+    "Attention",
+    "HRMInnerCarry",
+    "HRMCarry",
+    "HRMConfig",
+    "HRMBlock",
+    "HRMReasoningModule"
 ]
