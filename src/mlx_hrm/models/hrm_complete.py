@@ -59,8 +59,8 @@ class HRM(nn.Module):
         
     def __call__(
         self, 
-        batch: Dict[str, mx.array], 
-        carry: Optional[HRMCarry] = None
+        carry: Optional[HRMCarry],
+        batch: Dict[str, mx.array]
     ) -> Tuple[HRMCarry, Dict[str, mx.array]]:
         """
         Standard forward pass.
@@ -119,7 +119,7 @@ class HRM(nn.Module):
         
         # Forward pass
         batch = {'input_ids': input_ids}
-        _, outputs = self(batch)
+        _, outputs = self(None, batch)
         
         # Remove batch dimension
         return outputs['logits'][0]
