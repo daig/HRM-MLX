@@ -258,6 +258,57 @@ class HRMTrainer:
         
         return loss, grads, metrics
     
+    def _flatten_nested_dict(self, nested_dict, parent_key=''):
+        """Flatten a nested dictionary into a flat dictionary with dot-separated keys."""
+        items = []
+        for k, v in nested_dict.items():
+            new_key = f"{parent_key}.{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.extend(self._flatten_nested_dict(v, new_key).items())
+            elif isinstance(v, mx.array):
+                items.append((new_key, v))
+            # Skip non-array, non-dict items (like lists of modules)
+        return dict(items)
+    
+    def _unflatten_to_nested_dict(self, flat_dict, template_dict):
+        """Reconstruct nested dictionary structure using a template."""
+        def _build_nested(template, path=""):
+            if isinstance(template, dict):
+                result = {}
+                for k, v in template.items():
+                    new_path = f"{path}.{k}" if path else k
+                    if isinstance(v, dict):
+                        result[k] = _build_nested(v, new_path)
+                    elif isinstance(v, mx.array):
+                        # Use updated value if available, otherwise keep original
+                        result[k] = flat_dict.get(new_path, v)
+                    else:
+                        # Keep non-array values (like lists) unchanged
+                        result[k] = v
+                return result
+            else:
+                return template
+        
+        return _build_nested(template_dict)
+    
+    def _align_gradients_with_model_params(self, grads):
+        """
+        Align gradient keys with model parameter keys.
+        
+        The gradients are computed against loss_model, but we need to apply them
+        to loss_model.model. The gradient structure has an extra 'model' wrapper
+        that needs to be removed to match the model parameter structure.
+        
+        Gradient structure: {'model': {'model': {'inner': {...}}}}
+        Model param structure: {'model': {'inner': {...}}}
+        
+        We need to extract grads['model'] to align with model parameters.
+        """
+        if isinstance(grads, dict) and 'model' in grads:
+            # The gradients are nested under a 'model' key, extract the inner structure
+            return grads['model']
+        return grads
+    
     def _clip_gradients(self, grads):
         """Clip gradients by global norm using tree operations."""
         if self.max_grad_norm is None:
@@ -309,12 +360,22 @@ class HRMTrainer:
                 
                 # Update weights if accumulated enough
                 if accumulation_count >= self.gradient_accumulation_steps:
+                    # Align gradients with model parameter structure
+                    aligned_grads = self._align_gradients_with_model_params(accumulated_grads)
+                    
                     # Clip gradients
-                    accumulated_grads = self._clip_gradients(accumulated_grads)
+                    aligned_grads = self._clip_gradients(aligned_grads)
+                    
+                    # Flatten both parameters and gradients for optimizer
+                    model_params = self.loss_model.model.parameters()
+                    flat_params = self._flatten_nested_dict(model_params)
+                    flat_grads = self._flatten_nested_dict(aligned_grads)
                     
                     # Update parameters
-                    model_params = self.loss_model.model.parameters()
-                    updated_params = self.optimizer.update(model_params, accumulated_grads)
+                    updated_flat_params = self.optimizer.update(flat_params, flat_grads)
+                    
+                    # Reconstruct nested structure and update model
+                    updated_params = self._unflatten_to_nested_dict(updated_flat_params, model_params)
                     self.loss_model.model.update(updated_params)
                     
                     # Update learning rate

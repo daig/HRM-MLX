@@ -2,6 +2,7 @@
 
 import mlx.core as mx
 import mlx.nn as nn
+import mlx.optimizers as optim
 from typing import Dict, Optional, Tuple, List, Any, Union
 import math
 
